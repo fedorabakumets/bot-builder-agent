@@ -8,8 +8,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mymmrac/telego"
+	"github.com/mymmrac/telego/telegoapi"
 
 	"bot-builder-agent/internal/agent"
 	"bot-builder-agent/internal/config"
@@ -401,6 +403,19 @@ func (b *Bot) sayParts(chatID int64, body string, markup telego.ReplyMarkup) {
 }
 
 func (b *Bot) send(chatID int64, body string, markup telego.ReplyMarkup) (*telego.Message, error) {
+	htmlText := text.ToTelegramHTML(body)
+	if utf8.RuneCountInString(htmlText) <= 4096 {
+		msg, err := b.api.SendMessage(b.baseCtx(), &telego.SendMessageParams{
+			ChatID:      telego.ChatID{ID: chatID},
+			Text:        htmlText,
+			ParseMode:   telego.ModeHTML,
+			ReplyMarkup: markup,
+		})
+		if err == nil || !htmlRejected(err) {
+			return msg, err
+		}
+		b.log.Warn("telegram не принял html, отправляю без разметки: %v", err)
+	}
 	return b.api.SendMessage(b.baseCtx(), &telego.SendMessageParams{
 		ChatID:      telego.ChatID{ID: chatID},
 		Text:        body,
@@ -409,6 +424,20 @@ func (b *Bot) send(chatID int64, body string, markup telego.ReplyMarkup) (*teleg
 }
 
 func (b *Bot) edit(chatID int64, messageID int, body string, markup *telego.InlineKeyboardMarkup) error {
+	htmlText := text.ToTelegramHTML(body)
+	if utf8.RuneCountInString(htmlText) <= 4096 {
+		_, err := b.api.EditMessageText(b.baseCtx(), &telego.EditMessageTextParams{
+			ChatID:      telego.ChatID{ID: chatID},
+			MessageID:   messageID,
+			Text:        htmlText,
+			ParseMode:   telego.ModeHTML,
+			ReplyMarkup: markup,
+		})
+		if err == nil || !htmlRejected(err) {
+			return err
+		}
+		b.log.Warn("telegram не принял html, правлю без разметки: %v", err)
+	}
 	_, err := b.api.EditMessageText(b.baseCtx(), &telego.EditMessageTextParams{
 		ChatID:      telego.ChatID{ID: chatID},
 		MessageID:   messageID,
@@ -416,6 +445,19 @@ func (b *Bot) edit(chatID int64, messageID int, body string, markup *telego.Inli
 		ReplyMarkup: markup,
 	})
 	return err
+}
+
+func htmlRejected(err error) bool {
+	if err == nil {
+		return false
+	}
+	desc := err.Error()
+	var apiErr *telegoapi.Error
+	if errors.As(err, &apiErr) && apiErr != nil && apiErr.Description != "" {
+		desc = apiErr.Description
+	}
+	d := strings.ToLower(desc)
+	return strings.Contains(d, "parse") || strings.Contains(d, "entit") || strings.Contains(d, "too long")
 }
 
 func toOR(msgs []store.Message) []openrouter.Message {
