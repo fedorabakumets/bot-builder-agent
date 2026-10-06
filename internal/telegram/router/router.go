@@ -230,17 +230,21 @@ func fromFreeText(in Input) Result {
 			return Result{Kind: KindReply, Next: StateWaitBotToken, Text: "Нужен токен BotFather вида 123456:ABC…"}
 		}
 		return Result{Kind: KindAddBotToken, Next: StateBots, Payload: in.Text, ProjectID: in.ActiveProject}
-	case StateMain, StateChat:
-		if !in.HasToken {
-			return needAccount(in)
-		}
-		if in.Text == "" {
-			return Result{Kind: KindReply, Next: StateChat, Text: "Опишите задачу текстом."}
-		}
-		return Result{Kind: KindAskAgent, Next: StateChat, Payload: in.Text, Text: in.Text}
+	case StateMain, StateChat, StateAccount, StateProjects, StateBots:
+		return askFromText(in)
 	default:
-		return Result{Kind: KindReply, Next: in.State, Text: "Выберите кнопку или откройте «Задача»."}
+		return Result{Kind: KindReply, Next: in.State, Text: "Выберите кнопку меню."}
 	}
+}
+
+func askFromText(in Input) Result {
+	if !in.HasToken {
+		return needAccount(in)
+	}
+	if in.Text == "" {
+		return Result{Kind: KindReply, Next: StateChat, Text: "Опишите задачу текстом."}
+	}
+	return Result{Kind: KindAskAgent, Next: StateChat, Payload: in.Text, Text: in.Text}
 }
 
 func fromCallback(in Input) Result {
@@ -374,6 +378,6 @@ func parseCommand(text string) (cmd, args string, ok bool) {
 	return cmd, args, cmd != ""
 }
 
-const startText = "Я собираю и правлю ботов в конструкторе.\n\nОткройте «Аккаунт» и пришлите блок mcpServers из вкладки «Агент». Затем «Задача» и опишите бота своими словами. «Проекты» и «Боты» открывают списки."
+const startText = "Я собираю и правлю ботов в конструкторе.\n\nОткройте «Аккаунт» и пришлите блок mcpServers из вкладки «Агент». Затем напишите задачу своими словами: какого бота собрать или что изменить. «Проекты» и «Боты» открывают списки."
 
-const helpText = "Кнопки внизу повторяют команды.\n/token сохранить блок mcpServers или токен mcp_…\n/status статус\n/projects проекты\n/bots боты активного проекта\n/reset очистить диалог\n/logout забыть токен\n/cancel выйти из ввода"
+const helpText = "Напишите задачу обычным сообщением — я начну её сразу.\nКнопки внизу повторяют команды.\n/token сохранить блок mcpServers или токен mcp_…\n/status статус\n/projects проекты\n/bots боты активного проекта\n/reset очистить диалог\n/logout забыть токен\n/cancel выйти из ввода"

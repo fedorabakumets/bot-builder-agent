@@ -56,6 +56,24 @@ func TestMenuTextIsNotAgentTask(t *testing.T) {
 	}
 }
 
+func TestFreeTextAsksAgentFromMenuScreens(t *testing.T) {
+	text := "собери магазин"
+	for _, state := range []State{StateMain, StateAccount, StateProjects, StateBots} {
+		res := Handle(Input{State: state, HasToken: true, Allowed: true, Text: text})
+		if res.Kind != KindAskAgent || res.Payload != text || res.Next != StateChat {
+			t.Fatalf("%s: %+v", state, res)
+		}
+	}
+	account := Handle(Input{State: StateAccount, HasToken: false, Allowed: true, Text: text})
+	if account.Kind != KindNeedAccount {
+		t.Fatalf("без токена: %+v", account)
+	}
+	created := Handle(Input{State: StateWaitProjectName, HasToken: true, Allowed: true, Text: "Магазин"})
+	if created.Kind != KindCreateProject || created.Payload != "Магазин" || created.Next != StateProjects {
+		t.Fatalf("имя проекта: %+v", created)
+	}
+}
+
 func TestAllowlistAndTokenWait(t *testing.T) {
 	if Handle(Input{Allowed: false, Text: "/start"}).Kind != KindNotAllowed {
 		t.Fatal("allowlist")
