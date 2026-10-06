@@ -101,6 +101,79 @@ func TestToTelegramHTMLFence(t *testing.T) {
 	}
 }
 
+func TestToTelegramHTMLTorLinkTable(t *testing.T) {
+	in := strings.Join([]string{
+		"Все 4 бота проекта TorLink уже работают",
+		"",
+		"| Бот | Username | Аптайм | Всего | За 24ч | Новые сегодня |",
+		"|-----|----------|--------|-------|--------|---------------|",
+		"| TorLink | @TorLink_brobot | 22ч 37м | 586 | 46 | 44 |",
+	}, "\n")
+	want := strings.Join([]string{
+		"Все 4 бота проекта TorLink уже работают",
+		"",
+		"<table><tr><th>Бот</th><th>Username</th><th>Аптайм</th><th>Всего</th><th>За 24ч</th><th>Новые сегодня</th></tr>" +
+			"<tr><td>TorLink</td><td>@TorLink_brobot</td><td>22ч 37м</td><td>586</td><td>46</td><td>44</td></tr></table>",
+	}, "\n")
+	got := ToTelegramHTML(in)
+	if got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+	if strings.Contains(got, "|") {
+		t.Fatalf("остались пайпы: %s", got)
+	}
+}
+
+func TestToTelegramHTMLTableKeepsInlineMarkup(t *testing.T) {
+	in := strings.Join([]string{
+		"**Итог** и `код`",
+		"",
+		"| A | B |",
+		"|---|---|",
+		"| *x* | a < b & c |",
+		"",
+		"после",
+	}, "\n")
+	want := strings.Join([]string{
+		"<b>Итог</b> и <code>код</code>",
+		"",
+		"<table><tr><th>A</th><th>B</th></tr><tr><td><i>x</i></td><td>a &lt; b &amp; c</td></tr></table>",
+		"",
+		"после",
+	}, "\n")
+	got := ToTelegramHTML(in)
+	if got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestToTelegramHTMLTableOnly(t *testing.T) {
+	in := "| A | B |\n|---|---|\n| 1 | 2 |"
+	got := ToTelegramHTML(in)
+	want := "<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestToTelegramHTMLWideTableStaysText(t *testing.T) {
+	var cells []string
+	for i := 0; i < 21; i++ {
+		cells = append(cells, "c")
+	}
+	row := "| " + strings.Join(cells, " | ") + " |"
+	sepCells := make([]string, 21)
+	for i := range sepCells {
+		sepCells[i] = "---"
+	}
+	sep := "| " + strings.Join(sepCells, " | ") + " |"
+	in := row + "\n" + sep + "\n" + row
+	got := ToTelegramHTML(in)
+	if strings.Contains(got, "<table>") || !strings.Contains(got, "|") {
+		t.Fatalf("широкая таблица не должна становиться HTML: %s", got)
+	}
+}
+
 func TestRedactAndToken(t *testing.T) {
 	in := "токен mcp_abcdef и 123456789:AAHabcdefghijklmnopqrst"
 	out := Redact(in)

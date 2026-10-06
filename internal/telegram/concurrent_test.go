@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -13,6 +14,7 @@ import (
 	"bot-builder-agent/internal/agent"
 	"bot-builder-agent/internal/config"
 	"bot-builder-agent/internal/logger"
+	"bot-builder-agent/internal/mcp"
 	"bot-builder-agent/internal/openrouter"
 	"bot-builder-agent/internal/store"
 )
@@ -213,6 +215,79 @@ func TestConfirmGoesToTheRightChat(t *testing.T) {
 	}
 }
 
+func TestRunAgentDeletesStatusInsteadOfGotovo(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "success", want: "ответ агента"},
+		{name: "cancel", err: context.Canceled, want: "Остановил."},
+		{name: "unauthorized", err: mcp.ErrUnauthorized, want: "Токен отклонён. Откройте «Аккаунт» и задайте новый."},
+		{name: "error", err: errors.New("boom"), want: "Не удалось получить ответ: boom"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			b, api, run := newTestBot(t)
+			if err := b.store.SaveToken(context.Background(), 7, "mcp_user_7_xx"); err != nil {
+				t.Fatal(err)
+			}
+			run.fn = func(ctx context.Context, req agent.Request) (agent.Result, error) {
+				if req.OnTool != nil {
+					req.OnTool("db_list_bots")
+				}
+				if tc.err != nil {
+					return agent.Result{}, tc.err
+				}
+				return agent.Result{Reply: "ответ агента"}, nil
+			}
+			b.process(textUpdate(7, "старт"))
+			lines := api.snapshot()
+			if hasText(lines, 7, "Готово") {
+				t.Fatalf("осталось Готово: %+v", lines)
+			}
+			if !hasText(lines, 7, "Думаю…") {
+				t.Fatalf("пропал статус: %+v", lines)
+			}
+			if !hasText(lines, 7, "Вызываю db_list_bots") {
+				t.Fatalf("пропал статус инструмента: %+v", lines)
+			}
+			if !hasText(lines, 7, tc.want) {
+				t.Fatalf("нет ответа %q в %+v", tc.want, lines)
+			}
+			api.mu.Lock()
+			deleted := append([]int(nil), api.deleted...)
+			api.mu.Unlock()
+			if len(deleted) != 1 || deleted[0] == 0 {
+				t.Fatalf("delete %+v", deleted)
+			}
+		})
+	}
+}
+
+func TestRunAgentDeleteFailureDoesNotLeaveGotovo(t *testing.T) {
+	b, api, run := newTestBot(t)
+	api.deleteErr = errors.New("delete failed")
+	if err := b.store.SaveToken(context.Background(), 7, "mcp_user_7_xx"); err != nil {
+		t.Fatal(err)
+	}
+	run.fn = func(ctx context.Context, req agent.Request) (agent.Result, error) {
+		req.OnTool("db_list_bots")
+		return agent.Result{Reply: "ответ агента"}, nil
+	}
+	b.process(textUpdate(7, "старт"))
+	lines := api.snapshot()
+	if hasText(lines, 7, "Готово") {
+		t.Fatalf("при ошибке delete осталось Готово: %+v", lines)
+	}
+	if !hasText(lines, 7, "Вызываю db_list_bots") {
+		t.Fatalf("пропал последний статус: %+v", lines)
+	}
+	if !hasText(lines, 7, "ответ агента") {
+		t.Fatalf("ответ не ушёл: %+v", lines)
+	}
+}
+
 type scriptRunner struct {
 	fn func(ctx context.Context, req agent.Request) (agent.Result, error)
 }
@@ -227,9 +302,11 @@ type sentLine struct {
 }
 
 type fakeAPI struct {
-	mu    sync.Mutex
-	lines []sentLine
-	next  int
+	mu        sync.Mutex
+	lines     []sentLine
+	next      int
+	deleted   []int
+	deleteErr error
 }
 
 func (f *fakeAPI) GetMe(context.Context) (*telego.User, error) {
@@ -259,6 +336,13 @@ func (f *fakeAPI) EditMessageText(_ context.Context, params *telego.EditMessageT
 	defer f.mu.Unlock()
 	f.lines = append(f.lines, sentLine{chat: params.ChatID.ID, text: params.Text})
 	return &telego.Message{MessageID: params.MessageID, Text: params.Text}, nil
+}
+
+func (f *fakeAPI) DeleteMessage(_ context.Context, params *telego.DeleteMessageParams) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deleted = append(f.deleted, params.MessageID)
+	return f.deleteErr
 }
 
 func (f *fakeAPI) snapshot() []sentLine {

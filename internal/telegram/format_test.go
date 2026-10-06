@@ -99,6 +99,24 @@ func TestSendFallsBackWhenHTMLRejected(t *testing.T) {
 	}
 }
 
+func TestSendTableFallsBackWhenHTMLRejected(t *testing.T) {
+	b, _, _ := newTestBot(t)
+	api := &captureAPI{fakeAPI: b.api.(*fakeAPI), rejectHTML: true}
+	b.api = api
+	body := strings.Join([]string{
+		"| Бот | Username |",
+		"|-----|----------|",
+		"| TorLink | @TorLink_brobot |",
+	}, "\n")
+	msg, err := b.send(7, body, ui.MainKeyboard())
+	if err != nil || msg == nil {
+		t.Fatal(err)
+	}
+	if len(api.texts) != 1 || api.texts[0] != body || api.modes[0] != "" {
+		t.Fatalf("fallback texts=%q modes=%q", api.texts, api.modes)
+	}
+}
+
 func TestHTMLRejectedDetectsParseError(t *testing.T) {
 	err := fmt.Errorf("wrap: %w", &telegoapi.Error{ErrorCode: 400, Description: "Bad Request: can't parse entities"})
 	if !htmlRejected(err) {

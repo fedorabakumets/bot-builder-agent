@@ -32,6 +32,7 @@ type tgAPI interface {
 	AnswerCallbackQuery(ctx context.Context, params *telego.AnswerCallbackQueryParams) error
 	SendMessage(ctx context.Context, params *telego.SendMessageParams) (*telego.Message, error)
 	EditMessageText(ctx context.Context, params *telego.EditMessageTextParams) (*telego.Message, error)
+	DeleteMessage(ctx context.Context, params *telego.DeleteMessageParams) error
 }
 
 type agentRunner interface {
@@ -232,8 +233,14 @@ func (b *Bot) runAgent(ctx context.Context, userID, chatID int64, task string) {
 			return b.confirm(c, userID, chatID, name)
 		},
 	})
+	// «Думаю…» и «Вызываю …» остаются, пока идёт запрос. В конце статус
+	// удаляется. Если delete не прошёл, последнее статусное сообщение
+	// остаётся как есть — «Готово» не пишем, ответ всё равно отправляем.
 	if statusID != 0 {
-		_ = b.edit(chatID, statusID, "Готово", nil)
+		_ = b.api.DeleteMessage(b.baseCtx(), &telego.DeleteMessageParams{
+			ChatID:    telego.ChatID{ID: chatID},
+			MessageID: statusID,
+		})
 	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) {

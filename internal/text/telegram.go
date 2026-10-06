@@ -1,20 +1,32 @@
 package text
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 )
 
+// maxTableColumns — предел Bot API: «Up to 20 columns in a table».
+const maxTableColumns = 20
+
+// sepCell — строка-разделитель GitHub-таблицы: ---, :---, ---:, :---:.
+var sepCell = regexp.MustCompile(`^:?-{3,}:?$`)
+
 // ToTelegramHTML переводит текст ответа в HTML для parse_mode=HTML.
 // Сначала экранируются <, > и &, затем настоящие **жирный**, __жирный__,
 // *курсив*, _курсив_, `код` и блоки ```. Идентификаторы вроде
 // mcp_token_example и file_name.go не считаются курсивом.
-// Если разметка получилась невалидной, возвращается полностью экранированный
-// текст без тегов — его всё ещё можно отправить как HTML.
+// Markdown-таблицы с | становятся нативной таблицей Rich HTML style:
+// <table><tr><th>…</th></tr><tr><td>…</td></tr></table>
+// (https://core.telegram.org/bots/api#rich-html-style). Текст ячеек
+// экранируется, жирный, курсив и код внутри ячеек сохраняются.
+// Таблица шире 20 колонок остаётся текстом. Если разметка получилась
+// невалидной, возвращается полностью экранированный текст без тегов.
 func ToTelegramHTML(s string) string {
 	var slots []string
 	protected := protectCode(s, &slots)
+	protected = protectTables(protected, &slots)
 	out := emphasize(escapeTG(protected))
 	out = restoreSlots(out, slots)
 	if !balancedTelegramHTML(out) {
@@ -268,6 +280,120 @@ func delimEdge(s string, index int, before, underscore bool) bool {
 	return r != '*'
 }
 
+// protectTables заменяет markdown-таблицы на слот с HTML <table>.
+// Ячейки уже экранированы и прогнаны через жирный/курсив/код.
+func protectTables(s string, slots *[]string) string {
+	if !strings.Contains(s, "|") {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	var b strings.Builder
+	changed := false
+	for i := 0; i < len(lines); {
+		html, n, ok := parsePipeTable(lines, i, *slots)
+		if ok {
+			if b.Len() > 0 {
+				b.WriteByte('\n')
+			}
+			b.WriteString(putSlot(slots, html))
+			i += n
+			changed = true
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(lines[i])
+		i++
+	}
+	if !changed {
+		return s
+	}
+	return b.String()
+}
+
+func parsePipeTable(lines []string, i int, slots []string) (string, int, bool) {
+	if i+1 >= len(lines) {
+		return "", 0, false
+	}
+	header, ok := pipeCells(lines[i])
+	if !ok || len(header) == 0 || len(header) > maxTableColumns || isSeparator(header) {
+		return "", 0, false
+	}
+	sep, ok := pipeCells(lines[i+1])
+	if !ok || len(sep) != len(header) || !isSeparator(sep) {
+		return "", 0, false
+	}
+	rows := [][]string{header}
+	n := 2
+	for i+n < len(lines) {
+		cells, ok := pipeCells(lines[i+n])
+		if !ok || len(cells) != len(header) || isSeparator(cells) {
+			break
+		}
+		rows = append(rows, cells)
+		n++
+	}
+	return renderTable(rows, slots), n, true
+}
+
+func pipeCells(line string) ([]string, bool) {
+	trim := strings.TrimSpace(line)
+	if !strings.Contains(trim, "|") {
+		return nil, false
+	}
+	trim = strings.ReplaceAll(trim, `\|`, "\x01")
+	if strings.HasPrefix(trim, "|") {
+		trim = strings.TrimPrefix(trim, "|")
+	}
+	if strings.HasSuffix(trim, "|") {
+		trim = strings.TrimSuffix(trim, "|")
+	}
+	parts := strings.Split(trim, "|")
+	cells := make([]string, len(parts))
+	for i, p := range parts {
+		cells[i] = strings.ReplaceAll(strings.TrimSpace(p), "\x01", "|")
+	}
+	return cells, true
+}
+
+func isSeparator(cells []string) bool {
+	if len(cells) == 0 {
+		return false
+	}
+	for _, c := range cells {
+		if !sepCell.MatchString(c) {
+			return false
+		}
+	}
+	return true
+}
+
+func renderTable(rows [][]string, slots []string) string {
+	var b strings.Builder
+	b.WriteString("<table>")
+	for r, row := range rows {
+		tag := "td"
+		if r == 0 {
+			tag = "th"
+		}
+		b.WriteString("<tr>")
+		for _, cell := range row {
+			body := restoreSlots(emphasize(escapeTG(cell)), slots)
+			b.WriteByte('<')
+			b.WriteString(tag)
+			b.WriteByte('>')
+			b.WriteString(body)
+			b.WriteString("</")
+			b.WriteString(tag)
+			b.WriteByte('>')
+		}
+		b.WriteString("</tr>")
+	}
+	b.WriteString("</table>")
+	return b.String()
+}
+
 func balancedTelegramHTML(s string) bool {
 	var stack []string
 	for i := 0; i < len(s); {
@@ -286,7 +412,7 @@ func balancedTelegramHTML(s string) bool {
 			tag = strings.TrimPrefix(tag, "/")
 		}
 		switch tag {
-		case "b", "i", "code", "pre":
+		case "b", "i", "code", "pre", "table", "tr", "th", "td":
 		default:
 			return false
 		}
