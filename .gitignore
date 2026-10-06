@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+data/
+logs/
+chantg404-src-backup.tar.gz
+*.log
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

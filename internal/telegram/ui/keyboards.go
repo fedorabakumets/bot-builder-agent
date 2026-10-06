@@ -1,0 +1,280 @@
+package ui
+
+import "github.com/mymmrac/telego"
+
+const (
+	BtnTask      = "💬 Задача"
+	BtnProjects  = "📁 Проекты"
+	BtnBots      = "🤖 Боты"
+	BtnAccount   = "⚙️ Аккаунт"
+	BtnToken     = "🔑 MCP-токен"
+	BtnStatus    = "📊 Статус"
+	BtnReset     = "🧹 Сбросить диалог"
+	BtnLogout    = "🚪 Выйти"
+	BtnBack      = "⬅️ Назад"
+	BtnCancel    = "❌ Отмена"
+	BtnCreate    = "➕ Создать"
+	BtnActive    = "📁 Активные"
+	BtnArchive   = "📦 Архив"
+	BtnConnect   = "➕ Подключить"
+	BtnStopRun   = "⏹ Остановить"
+	BtnYes       = "Да"
+	BtnNo        = "Нет"
+	BtnSummary   = "Сводка"
+	BtnRename    = "Переименовать"
+	BtnToArchive = "В архив"
+	BtnUnarchive = "Вернуть"
+	BtnDelete    = "Удалить"
+	BtnBotStatus = "Статус"
+	BtnStart     = "Старт"
+	BtnStop      = "Стоп"
+	BtnRestart   = "Перезапуск"
+	BtnLogs      = "Логи"
+	BtnBackList  = "К списку"
+)
+
+// RetentionDays — допустимые сроки хранения сообщений.
+var RetentionDays = []int{0, 7, 30, 60, 90, 180, 365}
+
+// Project — строка списка проектов.
+type Project struct {
+	ID       int64
+	Name     string
+	Archived bool
+}
+
+// BotToken — строка списка токенов бота без секрета.
+type BotToken struct {
+	ID        int64
+	Name      string
+	Username  string
+	Retention int
+}
+
+// MenuText сообщает, что строка совпадает с кнопкой меню и не должна уходить в модель.
+func MenuText(s string) bool {
+	switch s {
+	case BtnTask, BtnProjects, BtnBots, BtnAccount, BtnToken, BtnStatus, BtnReset, BtnLogout,
+		BtnBack, BtnCancel, BtnCreate, BtnActive, BtnArchive, BtnConnect:
+		return true
+	default:
+		return false
+	}
+}
+
+func reply(rows ...[]string) *telego.ReplyKeyboardMarkup {
+	kb := make([][]telego.KeyboardButton, 0, len(rows))
+	for _, row := range rows {
+		line := make([]telego.KeyboardButton, 0, len(row))
+		for _, label := range row {
+			line = append(line, telego.KeyboardButton{Text: label})
+		}
+		kb = append(kb, line)
+	}
+	return &telego.ReplyKeyboardMarkup{
+		Keyboard:       kb,
+		ResizeKeyboard: true,
+		IsPersistent:   true,
+	}
+}
+
+// MainKeyboard — постоянное главное меню.
+func MainKeyboard() *telego.ReplyKeyboardMarkup {
+	return reply(
+		[]string{BtnTask},
+		[]string{BtnProjects, BtnBots},
+		[]string{BtnAccount},
+	)
+}
+
+// AccountKeyboard — раздел аккаунта.
+func AccountKeyboard() *telego.ReplyKeyboardMarkup {
+	return reply(
+		[]string{BtnToken},
+		[]string{BtnStatus},
+		[]string{BtnReset},
+		[]string{BtnLogout},
+		[]string{BtnBack},
+	)
+}
+
+// ProjectsKeyboard — действия со списком проектов.
+func ProjectsKeyboard() *telego.ReplyKeyboardMarkup {
+	return reply(
+		[]string{BtnCreate},
+		[]string{BtnActive, BtnArchive},
+		[]string{BtnBack},
+	)
+}
+
+// BotsKeyboard — действия со списком ботов.
+func BotsKeyboard() *telego.ReplyKeyboardMarkup {
+	return reply(
+		[]string{BtnConnect},
+		[]string{BtnBack},
+	)
+}
+
+// WaitKeyboard — отмена ввода.
+func WaitKeyboard() *telego.ReplyKeyboardMarkup {
+	return reply([]string{BtnCancel})
+}
+
+// ScreenKeyboard возвращает reply-клавиатуру экрана.
+func ScreenKeyboard(screen string) *telego.ReplyKeyboardMarkup {
+	switch screen {
+	case "account":
+		return AccountKeyboard()
+	case "projects":
+		return ProjectsKeyboard()
+	case "bots":
+		return BotsKeyboard()
+	case "wait":
+		return WaitKeyboard()
+	default:
+		return MainKeyboard()
+	}
+}
+
+func inline(rows ...[]telego.InlineKeyboardButton) *telego.InlineKeyboardMarkup {
+	return &telego.InlineKeyboardMarkup{InlineKeyboard: rows}
+}
+
+func btn(text, data string) telego.InlineKeyboardButton {
+	return telego.InlineKeyboardButton{Text: text, CallbackData: data}
+}
+
+// ProjectListKeyboard — до 10 проектов и переход по страницам.
+func ProjectListKeyboard(items []Project, page int, archived bool) *telego.InlineKeyboardMarkup {
+	pageSize := 10
+	if page < 0 {
+		page = 0
+	}
+	start := page * pageSize
+	if start > len(items) {
+		start = 0
+		page = 0
+	}
+	end := start + pageSize
+	if end > len(items) {
+		end = len(items)
+	}
+	var rows [][]telego.InlineKeyboardButton
+	for _, item := range items[start:end] {
+		label := item.Name
+		if label == "" {
+			label = "без имени"
+		}
+		if len([]rune(label)) > 40 {
+			label = string([]rune(label)[:37]) + "…"
+		}
+		rows = append(rows, []telego.InlineKeyboardButton{
+			btn(label, formatID("p:open:", item.ID)),
+		})
+	}
+	var nav []telego.InlineKeyboardButton
+	prefix := "p:list:"
+	if archived {
+		prefix = "p:alist:"
+	}
+	if page > 0 {
+		nav = append(nav, btn("←", prefix+itoa(page-1)))
+	}
+	if end < len(items) {
+		nav = append(nav, btn("ещё", prefix+itoa(page+1)))
+	}
+	if len(nav) > 0 {
+		rows = append(rows, nav)
+	}
+	return inline(rows...)
+}
+
+// ProjectCardKeyboard — действия с одним проектом.
+func ProjectCardKeyboard(id int64) *telego.InlineKeyboardMarkup {
+	return inline(
+		[]telego.InlineKeyboardButton{
+			btn(BtnSummary, formatID("p:sum:", id)),
+			btn(BtnRename, formatID("p:ren:", id)),
+		},
+		[]telego.InlineKeyboardButton{
+			btn(BtnToArchive, formatID("p:arch:", id)),
+			btn(BtnUnarchive, formatID("p:unar:", id)),
+		},
+		[]telego.InlineKeyboardButton{
+			btn(BtnDelete, formatID("p:del:", id)),
+			btn(BtnBackList, "p:list:0"),
+		},
+	)
+}
+
+// BotListKeyboard — выбор токена бота.
+func BotListKeyboard(projectID int64, items []BotToken) *telego.InlineKeyboardMarkup {
+	var rows [][]telego.InlineKeyboardButton
+	for _, item := range items {
+		label := item.Name
+		if item.Username != "" {
+			label += " @" + trimAt(item.Username)
+		}
+		if label == "" {
+			label = "бот"
+		}
+		if len([]rune(label)) > 40 {
+			label = string([]rune(label)[:37]) + "…"
+		}
+		rows = append(rows, []telego.InlineKeyboardButton{
+			btn(label, format2("b:card:", projectID, item.ID)),
+		})
+	}
+	return inline(rows...)
+}
+
+// BotCardKeyboard — статус, запуск и срок хранения.
+func BotCardKeyboard(projectID, tokenID int64) *telego.InlineKeyboardMarkup {
+	rows := [][]telego.InlineKeyboardButton{
+		{
+			btn(BtnBotStatus, format2("b:stat:", projectID, tokenID)),
+			btn(BtnStart, format2("b:start:", projectID, tokenID)),
+		},
+		{
+			btn(BtnStop, format2("b:stop:", projectID, tokenID)),
+			btn(BtnRestart, format2("b:re:", projectID, tokenID)),
+		},
+		{
+			btn(BtnLogs, format2("b:logs:", projectID, tokenID)),
+			btn(BtnDelete, format2("b:del:", projectID, tokenID)),
+		},
+	}
+	var line []telego.InlineKeyboardButton
+	for _, days := range RetentionDays {
+		line = append(line, btn(itoa(days), format3("b:ret:", projectID, tokenID, days)))
+		if len(line) == 4 {
+			rows = append(rows, line)
+			line = nil
+		}
+	}
+	if len(line) > 0 {
+		rows = append(rows, line)
+	}
+	rows = append(rows, []telego.InlineKeyboardButton{btn(BtnBackList, "b:list")})
+	return inline(rows...)
+}
+
+// ConfirmKeyboard — Да / Нет. dataYes и dataNo уже готовые callback_data.
+func ConfirmKeyboard(dataYes, dataNo string) *telego.InlineKeyboardMarkup {
+	return inline([]telego.InlineKeyboardButton{
+		btn(BtnYes, dataYes),
+		btn(BtnNo, dataNo),
+	})
+}
+
+// StopKeyboard — остановка текущего прогона агента.
+func StopKeyboard() *telego.InlineKeyboardMarkup {
+	return inline([]telego.InlineKeyboardButton{btn(BtnStopRun, "run:stop")})
+}
+
+func trimAt(s string) string {
+	if len(s) > 0 && s[0] == '@' {
+		return s[1:]
+	}
+	return s
+}
