@@ -338,6 +338,29 @@ func (f *fakeAPI) EditMessageText(_ context.Context, params *telego.EditMessageT
 	return &telego.Message{MessageID: params.MessageID, Text: params.Text}, nil
 }
 
+func (f *fakeAPI) SendRichMessage(_ context.Context, params *RichSendParams) (*telego.Message, error) {
+	text := params.HTML
+	if text == "" {
+		text = params.Markdown
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.next++
+	f.lines = append(f.lines, sentLine{chat: params.ChatID, text: text})
+	return &telego.Message{MessageID: f.next, Chat: telego.Chat{ID: params.ChatID}, Text: text}, nil
+}
+
+func (f *fakeAPI) EditRichMessage(_ context.Context, params *RichEditParams) (*telego.Message, error) {
+	text := params.HTML
+	if text == "" {
+		text = params.Markdown
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lines = append(f.lines, sentLine{chat: params.ChatID, text: text})
+	return &telego.Message{MessageID: params.MessageID, Text: text}, nil
+}
+
 func (f *fakeAPI) DeleteMessage(_ context.Context, params *telego.DeleteMessageParams) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

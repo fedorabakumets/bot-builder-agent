@@ -13,16 +13,19 @@ const maxTableColumns = 20
 // sepCell — строка-разделитель GitHub-таблицы: ---, :---, ---:, :---:.
 var sepCell = regexp.MustCompile(`^:?-{3,}:?$`)
 
-// ToTelegramHTML переводит текст ответа в HTML для parse_mode=HTML.
+// ToTelegramHTML переводит текст ответа в HTML.
 // Сначала экранируются <, > и &, затем настоящие **жирный**, __жирный__,
 // *курсив*, _курсив_, `код` и блоки ```. Идентификаторы вроде
 // mcp_token_example и file_name.go не считаются курсивом.
-// Markdown-таблицы с | становятся нативной таблицей Rich HTML style:
-// <table><tr><th>…</th></tr><tr><td>…</td></tr></table>
-// (https://core.telegram.org/bots/api#rich-html-style). Текст ячеек
-// экранируется, жирный, курсив и код внутри ячеек сохраняются.
-// Таблица шире 20 колонок остаётся текстом. Если разметка получилась
-// невалидной, возвращается полностью экранированный текст без тегов.
+// Markdown-таблицы с | становятся таблицей Rich HTML:
+// <table bordered><tr><th>…</th></tr><tr><td>…</td></tr></table>.
+// Этот фрагмент нельзя класть в sendMessage с parse_mode=HTML: обычный
+// HTML-режим таблицу не умеет. Его отправляют методом sendRichMessage
+// в поле rich_message.html (https://core.telegram.org/bots/api#rich-html-style).
+// Текст ячеек экранируется, жирный, курсив и код внутри ячеек сохраняются.
+// Таблица шире 20 колонок становится строками через « · », без пайпов.
+// Если разметка получилась невалидной, возвращается экранированный
+// текст без звёздочек и без пайп-таблицы.
 func ToTelegramHTML(s string) string {
 	var slots []string
 	protected := protectCode(s, &slots)
@@ -30,9 +33,98 @@ func ToTelegramHTML(s string) string {
 	out := emphasize(escapeTG(protected))
 	out = restoreSlots(out, slots)
 	if !balancedTelegramHTML(out) {
-		return escapeTG(s)
+		return escapeTG(Plain(s))
 	}
 	return out
+}
+
+// Plain убирает markdown так, чтобы в чате не осталось ** и пайп-таблиц.
+// Таблица становится строками «ячейка · ячейка». Жирный и курсив
+// раскрываются в обычный текст, код теряет обратные кавычки.
+func Plain(s string) string {
+	var slots []string
+	protected := protectCodeAs(s, &slots, false)
+	protected = plainTables(protected)
+	protected = unwrapEmphasis(protected)
+	return restoreSlots(protected, slots)
+}
+
+// WrapRichHTML собирает rich_message.html: абзацы в <p>, переносы внутри
+// абзаца в <br>, таблица и <pre> остаются отдельными блоками.
+func WrapRichHTML(s string) string {
+	var b strings.Builder
+	for len(s) > 0 {
+		rel, kind := nextRichAtom(s)
+		if rel < 0 {
+			b.WriteString(wrapParagraphs(s))
+			break
+		}
+		if rel > 0 {
+			if w := wrapParagraphs(s[:rel]); w != "" {
+				if b.Len() > 0 {
+					b.WriteByte('\n')
+				}
+				b.WriteString(w)
+			}
+		}
+		endTag := "</pre>"
+		if kind == "table" {
+			endTag = "</table>"
+		}
+		relEnd := strings.Index(s[rel:], endTag)
+		if relEnd < 0 {
+			if b.Len() > 0 {
+				b.WriteByte('\n')
+			}
+			b.WriteString(s[rel:])
+			break
+		}
+		end := rel + relEnd + len(endTag)
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(s[rel:end])
+		s = s[end:]
+	}
+	return strings.Trim(b.String(), "\n")
+}
+
+func nextRichAtom(s string) (int, string) {
+	table := strings.Index(s, "<table")
+	pre := strings.Index(s, "<pre>")
+	switch {
+	case table < 0 && pre < 0:
+		return -1, ""
+	case table < 0:
+		return pre, "pre"
+	case pre < 0:
+		return table, "table"
+	case table <= pre:
+		return table, "table"
+	default:
+		return pre, "pre"
+	}
+}
+
+func wrapParagraphs(s string) string {
+	s = strings.Trim(s, "\n")
+	if strings.TrimSpace(s) == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, para := range strings.Split(s, "\n\n") {
+		para = strings.Trim(para, "\n")
+		if strings.TrimSpace(para) == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString("<p>")
+		b.WriteString(strings.ReplaceAll(para, "\n", "<br>"))
+		b.WriteString("</p>")
+	}
+	return b.String()
 }
 
 func escapeTG(s string) string {
@@ -54,17 +146,29 @@ func escapeTG(s string) string {
 }
 
 func protectCode(s string, slots *[]string) string {
+	return protectCodeAs(s, slots, true)
+}
+
+func protectCodeAs(s string, slots *[]string, asHTML bool) string {
 	var b strings.Builder
 	i := 0
 	for i < len(s) {
 		if code, next, ok := readFence(s, i); ok {
-			b.WriteString(putSlot(slots, "<pre>"+escapeTG(code)+"</pre>"))
+			body := code
+			if asHTML {
+				body = "<pre>" + escapeTG(code) + "</pre>"
+			}
+			b.WriteString(putSlot(slots, body))
 			i = next
 			continue
 		}
 		if s[i] == '`' {
 			if code, next, ok := readInline(s, i); ok {
-				b.WriteString(putSlot(slots, "<code>"+escapeTG(code)+"</code>"))
+				body := code
+				if asHTML {
+					body = "<code>" + escapeTG(code) + "</code>"
+				}
+				b.WriteString(putSlot(slots, body))
 				i = next
 				continue
 			}
@@ -197,6 +301,14 @@ func emphasize(s string) string {
 	return s
 }
 
+func unwrapEmphasis(s string) string {
+	s = replaceMarked(s, "**", "", "", false)
+	s = replaceMarked(s, "__", "", "", true)
+	s = replaceMarked(s, "*", "", "", false)
+	s = replaceMarked(s, "_", "", "", true)
+	return s
+}
+
 func replaceMarked(s, mark, openTag, closeTag string, underscore bool) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -290,8 +402,14 @@ func protectTables(s string, slots *[]string) string {
 	var b strings.Builder
 	changed := false
 	for i := 0; i < len(lines); {
-		html, n, ok := parsePipeTable(lines, i, *slots)
+		rows, aligns, n, ok := parsePipeTable(lines, i)
 		if ok {
+			var html string
+			if len(rows[0]) > maxTableColumns {
+				html = renderPlainRows(rows, *slots, true)
+			} else {
+				html = renderTable(rows, aligns, *slots)
+			}
 			if b.Len() > 0 {
 				b.WriteByte('\n')
 			}
@@ -312,29 +430,48 @@ func protectTables(s string, slots *[]string) string {
 	return b.String()
 }
 
-func parsePipeTable(lines []string, i int, slots []string) (string, int, bool) {
-	if i+1 >= len(lines) {
-		return "", 0, false
+func parsePipeTable(lines []string, start int) (rows [][]string, aligns []string, n int, ok bool) {
+	if start+1 >= len(lines) {
+		return nil, nil, 0, false
 	}
-	header, ok := pipeCells(lines[i])
-	if !ok || len(header) == 0 || len(header) > maxTableColumns || isSeparator(header) {
-		return "", 0, false
+	header, ok := pipeCells(lines[start])
+	if !ok || len(header) == 0 || isSeparator(header) {
+		return nil, nil, 0, false
 	}
-	sep, ok := pipeCells(lines[i+1])
+	sep, ok := pipeCells(lines[start+1])
 	if !ok || len(sep) != len(header) || !isSeparator(sep) {
-		return "", 0, false
+		return nil, nil, 0, false
 	}
-	rows := [][]string{header}
-	n := 2
-	for i+n < len(lines) {
-		cells, ok := pipeCells(lines[i+n])
+	aligns = make([]string, len(sep))
+	for i, cell := range sep {
+		aligns[i] = cellAlign(cell)
+	}
+	rows = [][]string{header}
+	n = 2
+	for start+n < len(lines) {
+		cells, ok := pipeCells(lines[start+n])
 		if !ok || len(cells) != len(header) || isSeparator(cells) {
 			break
 		}
 		rows = append(rows, cells)
 		n++
 	}
-	return renderTable(rows, slots), n, true
+	return rows, aligns, n, true
+}
+
+func cellAlign(sep string) string {
+	left := strings.HasPrefix(sep, ":")
+	right := strings.HasSuffix(sep, ":")
+	switch {
+	case left && right:
+		return "center"
+	case right:
+		return "right"
+	case left:
+		return "left"
+	default:
+		return ""
+	}
 }
 
 func pipeCells(line string) ([]string, bool) {
@@ -369,19 +506,24 @@ func isSeparator(cells []string) bool {
 	return true
 }
 
-func renderTable(rows [][]string, slots []string) string {
+func renderTable(rows [][]string, aligns []string, slots []string) string {
 	var b strings.Builder
-	b.WriteString("<table>")
+	b.WriteString("<table bordered>")
 	for r, row := range rows {
 		tag := "td"
 		if r == 0 {
 			tag = "th"
 		}
 		b.WriteString("<tr>")
-		for _, cell := range row {
+		for c, cell := range row {
 			body := restoreSlots(emphasize(escapeTG(cell)), slots)
 			b.WriteByte('<')
 			b.WriteString(tag)
+			if c < len(aligns) && aligns[c] != "" {
+				b.WriteString(` align="`)
+				b.WriteString(aligns[c])
+				b.WriteByte('"')
+			}
 			b.WriteByte('>')
 			b.WriteString(body)
 			b.WriteString("</")
@@ -391,6 +533,56 @@ func renderTable(rows [][]string, slots []string) string {
 		b.WriteString("</tr>")
 	}
 	b.WriteString("</table>")
+	return b.String()
+}
+
+func plainTables(s string) string {
+	if !strings.Contains(s, "|") {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	var b strings.Builder
+	changed := false
+	for i := 0; i < len(lines); {
+		rows, _, n, ok := parsePipeTable(lines, i)
+		if ok {
+			if b.Len() > 0 {
+				b.WriteByte('\n')
+			}
+			b.WriteString(renderPlainRows(rows, nil, false))
+			i += n
+			changed = true
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(lines[i])
+		i++
+	}
+	if !changed {
+		return s
+	}
+	return b.String()
+}
+
+func renderPlainRows(rows [][]string, slots []string, asHTML bool) string {
+	var b strings.Builder
+	for r, row := range rows {
+		if r > 0 {
+			b.WriteByte('\n')
+		}
+		for c, cell := range row {
+			if c > 0 {
+				b.WriteString(" · ")
+			}
+			if asHTML {
+				b.WriteString(restoreSlots(emphasize(escapeTG(cell)), slots))
+				continue
+			}
+			b.WriteString(unwrapEmphasis(cell))
+		}
+	}
 	return b.String()
 }
 
@@ -410,6 +602,9 @@ func balancedTelegramHTML(s string) bool {
 		closing := strings.HasPrefix(tag, "/")
 		if closing {
 			tag = strings.TrimPrefix(tag, "/")
+		}
+		if sp := strings.IndexAny(tag, " \t/"); sp >= 0 {
+			tag = tag[:sp]
 		}
 		switch tag {
 		case "b", "i", "code", "pre", "table", "tr", "th", "td":

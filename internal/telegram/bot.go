@@ -32,6 +32,8 @@ type tgAPI interface {
 	AnswerCallbackQuery(ctx context.Context, params *telego.AnswerCallbackQueryParams) error
 	SendMessage(ctx context.Context, params *telego.SendMessageParams) (*telego.Message, error)
 	EditMessageText(ctx context.Context, params *telego.EditMessageTextParams) (*telego.Message, error)
+	SendRichMessage(ctx context.Context, params *RichSendParams) (*telego.Message, error)
+	EditRichMessage(ctx context.Context, params *RichEditParams) (*telego.Message, error)
 	DeleteMessage(ctx context.Context, params *telego.DeleteMessageParams) error
 }
 
@@ -65,11 +67,11 @@ type session struct {
 	confirm  chan bool
 }
 
-var _ tgAPI = (*telego.Bot)(nil)
+var _ tgAPI = (*liveAPI)(nil)
 
 // New создаёт бота. Сеть на этом шаге не нужна.
 func New(cfg *config.Config, log *logger.Logger, st *store.Store, mcpClient *mcp.Client, runner *agent.Runner) (*Bot, error) {
-	api, err := telego.NewBot(cfg.TelegramBotToken, telego.WithDefaultLogger(false, false))
+	api, err := newLiveAPI(cfg.TelegramBotToken)
 	if err != nil {
 		return nil, fmt.Errorf("telegram: %w", err)
 	}
@@ -410,11 +412,31 @@ func (b *Bot) sayParts(chatID int64, body string, markup telego.ReplyMarkup) {
 }
 
 func (b *Bot) send(chatID int64, body string, markup telego.ReplyMarkup) (*telego.Message, error) {
-	htmlText := text.ToTelegramHTML(body)
-	if utf8.RuneCountInString(htmlText) <= 4096 {
+	out := prepareOutbound(body)
+	if out.rich && utf8.RuneCountInString(out.html) <= richTextLimit {
+		msg, err := b.api.SendRichMessage(b.baseCtx(), &RichSendParams{
+			ChatID:      chatID,
+			HTML:        out.html,
+			ReplyMarkup: markup,
+		})
+		if err == nil || !htmlRejected(err) {
+			return msg, err
+		}
+		b.log.Warn("telegram не принял rich html, пробую markdown: %v", err)
+		msg, err = b.api.SendRichMessage(b.baseCtx(), &RichSendParams{
+			ChatID:      chatID,
+			Markdown:    body,
+			ReplyMarkup: markup,
+		})
+		if err == nil || !htmlRejected(err) {
+			return msg, err
+		}
+		b.log.Warn("telegram не принял rich markdown, отправляю без разметки: %v", err)
+	}
+	if !out.rich && utf8.RuneCountInString(out.html) <= 4096 {
 		msg, err := b.api.SendMessage(b.baseCtx(), &telego.SendMessageParams{
 			ChatID:      telego.ChatID{ID: chatID},
-			Text:        htmlText,
+			Text:        out.html,
 			ParseMode:   telego.ModeHTML,
 			ReplyMarkup: markup,
 		})
@@ -425,18 +447,40 @@ func (b *Bot) send(chatID int64, body string, markup telego.ReplyMarkup) (*teleg
 	}
 	return b.api.SendMessage(b.baseCtx(), &telego.SendMessageParams{
 		ChatID:      telego.ChatID{ID: chatID},
-		Text:        body,
+		Text:        out.plain,
 		ReplyMarkup: markup,
 	})
 }
 
 func (b *Bot) edit(chatID int64, messageID int, body string, markup *telego.InlineKeyboardMarkup) error {
-	htmlText := text.ToTelegramHTML(body)
-	if utf8.RuneCountInString(htmlText) <= 4096 {
+	out := prepareOutbound(body)
+	if out.rich && utf8.RuneCountInString(out.html) <= richTextLimit {
+		_, err := b.api.EditRichMessage(b.baseCtx(), &RichEditParams{
+			ChatID:      chatID,
+			MessageID:   messageID,
+			HTML:        out.html,
+			ReplyMarkup: markup,
+		})
+		if err == nil || !htmlRejected(err) {
+			return err
+		}
+		b.log.Warn("telegram не принял rich html, пробую markdown: %v", err)
+		_, err = b.api.EditRichMessage(b.baseCtx(), &RichEditParams{
+			ChatID:      chatID,
+			MessageID:   messageID,
+			Markdown:    body,
+			ReplyMarkup: markup,
+		})
+		if err == nil || !htmlRejected(err) {
+			return err
+		}
+		b.log.Warn("telegram не принял rich markdown, правлю без разметки: %v", err)
+	}
+	if !out.rich && utf8.RuneCountInString(out.html) <= 4096 {
 		_, err := b.api.EditMessageText(b.baseCtx(), &telego.EditMessageTextParams{
 			ChatID:      telego.ChatID{ID: chatID},
 			MessageID:   messageID,
-			Text:        htmlText,
+			Text:        out.html,
 			ParseMode:   telego.ModeHTML,
 			ReplyMarkup: markup,
 		})
@@ -448,10 +492,25 @@ func (b *Bot) edit(chatID int64, messageID int, body string, markup *telego.Inli
 	_, err := b.api.EditMessageText(b.baseCtx(), &telego.EditMessageTextParams{
 		ChatID:      telego.ChatID{ID: chatID},
 		MessageID:   messageID,
-		Text:        body,
+		Text:        out.plain,
 		ReplyMarkup: markup,
 	})
 	return err
+}
+
+func prepareOutbound(body string) preparedText {
+	htmlText := text.ToTelegramHTML(body)
+	plain := text.Plain(body)
+	if strings.Contains(htmlText, "<table") {
+		return preparedText{html: text.WrapRichHTML(htmlText), plain: plain, rich: true}
+	}
+	return preparedText{html: htmlText, plain: plain}
+}
+
+type preparedText struct {
+	html  string
+	plain string
+	rich  bool
 }
 
 func htmlRejected(err error) bool {
@@ -464,7 +523,13 @@ func htmlRejected(err error) bool {
 		desc = apiErr.Description
 	}
 	d := strings.ToLower(desc)
-	return strings.Contains(d, "parse") || strings.Contains(d, "entit") || strings.Contains(d, "too long")
+	return strings.Contains(d, "parse") ||
+		strings.Contains(d, "entit") ||
+		strings.Contains(d, "too long") ||
+		strings.Contains(d, "too_long") ||
+		strings.Contains(d, "unsupported") ||
+		strings.Contains(d, "rich_message") ||
+		strings.Contains(d, "rich message")
 }
 
 func toOR(msgs []store.Message) []openrouter.Message {
