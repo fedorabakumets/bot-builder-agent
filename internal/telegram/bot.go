@@ -24,6 +24,7 @@ import (
 
 // tgAPI — методы Telegram, которые нужны адаптеру.
 type tgAPI interface {
+	GetMe(ctx context.Context) (*telego.User, error)
 	SetMyCommands(ctx context.Context, params *telego.SetMyCommandsParams) error
 	UpdatesViaLongPolling(ctx context.Context, params *telego.GetUpdatesParams, options ...telego.LongPollingOption) (<-chan telego.Update, error)
 	AnswerCallbackQuery(ctx context.Context, params *telego.AnswerCallbackQueryParams) error
@@ -46,6 +47,7 @@ type Bot struct {
 
 	root       context.Context
 	confirmFor time.Duration
+	self       telego.User
 
 	mu    sync.Mutex
 	locks map[int64]*sync.Mutex
@@ -83,6 +85,11 @@ func New(cfg *config.Config, log *logger.Logger, st *store.Store, mcpClient *mcp
 // Start регистрирует команды и читает long polling, пока жив ctx.
 func (b *Bot) Start(ctx context.Context) error {
 	b.root = ctx
+	if me, err := b.api.GetMe(ctx); err != nil {
+		b.log.Warn("не удалось узнать имя бота, в группе отвечу только на команды без @чужого: %v", err)
+	} else if me != nil {
+		b.self = *me
+	}
 	if err := b.api.SetMyCommands(ctx, &telego.SetMyCommandsParams{
 		Commands: []telego.BotCommand{
 			{Command: "start", Description: "Начало и меню"},
@@ -116,6 +123,9 @@ func (b *Bot) Start(ctx context.Context) error {
 }
 
 func (b *Bot) process(upd telego.Update) {
+	if upd.CallbackQuery == nil && !directedAt(upd.Message, b.self) {
+		return
+	}
 	uid, chat, textValue, callback, ok := identity(upd)
 	if !ok {
 		return
@@ -324,7 +334,11 @@ func identity(upd telego.Update) (userID, chatID int64, textValue, callback stri
 		return cb.From.ID, chat, "", cb.Data, true
 	}
 	if upd.Message != nil && upd.Message.From != nil {
-		return upd.Message.From.ID, upd.Message.Chat.ID, upd.Message.Text, "", true
+		body := upd.Message.Text
+		if body == "" {
+			body = upd.Message.Caption
+		}
+		return upd.Message.From.ID, upd.Message.Chat.ID, body, "", true
 	}
 	return 0, 0, "", "", false
 }

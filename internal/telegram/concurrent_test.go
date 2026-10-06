@@ -232,6 +232,10 @@ type fakeAPI struct {
 	next  int
 }
 
+func (f *fakeAPI) GetMe(context.Context) (*telego.User, error) {
+	return &telego.User{ID: 1, IsBot: true, Username: "builder"}, nil
+}
+
 func (f *fakeAPI) SetMyCommands(context.Context, *telego.SetMyCommandsParams) error { return nil }
 
 func (f *fakeAPI) UpdatesViaLongPolling(context.Context, *telego.GetUpdatesParams, ...telego.LongPollingOption) (<-chan telego.Update, error) {
