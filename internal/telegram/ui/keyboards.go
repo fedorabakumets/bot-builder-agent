@@ -31,6 +31,7 @@ const (
 	BtnRestart   = "Перезапуск"
 	BtnLogs      = "Логи"
 	BtnBackList  = "К списку"
+	BtnMenu      = "Меню"
 )
 
 // RetentionDays — допустимые сроки хранения сообщений.
@@ -270,6 +271,96 @@ func ConfirmKeyboard(dataYes, dataNo string) *telego.InlineKeyboardMarkup {
 // StopKeyboard — остановка текущего прогона агента.
 func StopKeyboard() *telego.InlineKeyboardMarkup {
 	return inline([]telego.InlineKeyboardButton{btn(BtnStopRun, "run:stop")})
+}
+
+// MenuButton — одна inline-кнопка, которая раскрывает действия экрана.
+// В личке reply-клавиатура остаётся; в группе её заменяет эта кнопка.
+func MenuButton(screen string) *telego.InlineKeyboardMarkup {
+	data := "menu"
+	switch screen {
+	case "account", "projects", "bots", "wait":
+		data = "menu:" + screen
+	}
+	return inline([]telego.InlineKeyboardButton{btn(BtnMenu, data)})
+}
+
+// ScreenActions — inline-кнопки экрана. Те же действия, что у reply-клавиатуры.
+func ScreenActions(screen string) *telego.InlineKeyboardMarkup {
+	switch screen {
+	case "account":
+		return inline(
+			[]telego.InlineKeyboardButton{btn(BtnToken, "nav:token")},
+			[]telego.InlineKeyboardButton{btn(BtnStatus, "nav:status")},
+			[]telego.InlineKeyboardButton{btn(BtnReset, "nav:reset")},
+			[]telego.InlineKeyboardButton{btn(BtnLogout, "nav:logout")},
+			[]telego.InlineKeyboardButton{btn(BtnBack, "nav:back")},
+		)
+	case "projects":
+		return inline(
+			[]telego.InlineKeyboardButton{btn(BtnCreate, "nav:create")},
+			[]telego.InlineKeyboardButton{btn(BtnActive, "nav:active"), btn(BtnArchive, "nav:archive")},
+			[]telego.InlineKeyboardButton{btn(BtnBack, "nav:back")},
+		)
+	case "bots":
+		return inline(
+			[]telego.InlineKeyboardButton{btn(BtnConnect, "nav:connect")},
+			[]telego.InlineKeyboardButton{btn(BtnBack, "nav:back")},
+		)
+	case "wait":
+		return inline([]telego.InlineKeyboardButton{btn(BtnCancel, "nav:cancel")})
+	default:
+		return inline(
+			[]telego.InlineKeyboardButton{btn(BtnTask, "nav:task")},
+			[]telego.InlineKeyboardButton{btn(BtnProjects, "nav:projects"), btn(BtnBots, "nav:bots")},
+			[]telego.InlineKeyboardButton{btn(BtnAccount, "nav:account")},
+		)
+	}
+}
+
+// ActionsForMenu возвращает кнопки экрана для callback «menu» / «menu:экран».
+func ActionsForMenu(data string) (*telego.InlineKeyboardMarkup, bool) {
+	cb, ok := ParseCallback(data)
+	if !ok || cb.Name != "menu" {
+		return nil, false
+	}
+	return ScreenActions(cb.Screen), true
+}
+
+// InlineForGroup подменяет reply-клавиатуру одной кнопкой «Меню».
+// Уже inline-клавиатура (подтверждение, стоп, списки) остаётся как есть.
+func InlineForGroup(markup telego.ReplyMarkup) *telego.InlineKeyboardMarkup {
+	switch m := markup.(type) {
+	case *telego.InlineKeyboardMarkup:
+		return m
+	case *telego.ReplyKeyboardMarkup:
+		return MenuButton(screenOfReply(m))
+	default:
+		return nil
+	}
+}
+
+func screenOfReply(kb *telego.ReplyKeyboardMarkup) string {
+	if kb == nil {
+		return "main"
+	}
+	has := map[string]bool{}
+	for _, row := range kb.Keyboard {
+		for _, button := range row {
+			has[button.Text] = true
+		}
+	}
+	switch {
+	case has[BtnToken] || has[BtnLogout] || has[BtnReset]:
+		return "account"
+	case has[BtnCreate] || has[BtnArchive] || has[BtnActive]:
+		return "projects"
+	case has[BtnConnect]:
+		return "bots"
+	case has[BtnCancel]:
+		return "wait"
+	default:
+		return "main"
+	}
 }
 
 func trimAt(s string) string {

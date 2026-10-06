@@ -32,6 +32,7 @@ type tgAPI interface {
 	AnswerCallbackQuery(ctx context.Context, params *telego.AnswerCallbackQueryParams) error
 	SendMessage(ctx context.Context, params *telego.SendMessageParams) (*telego.Message, error)
 	EditMessageText(ctx context.Context, params *telego.EditMessageTextParams) (*telego.Message, error)
+	EditMessageReplyMarkup(ctx context.Context, params *telego.EditMessageReplyMarkupParams) (*telego.Message, error)
 	SendRichMessage(ctx context.Context, params *RichSendParams) (*telego.Message, error)
 	EditRichMessage(ctx context.Context, params *RichEditParams) (*telego.Message, error)
 	DeleteMessage(ctx context.Context, params *telego.DeleteMessageParams) error
@@ -191,6 +192,10 @@ func (b *Bot) process(upd telego.Update) {
 			default:
 			}
 		}
+	case router.KindOpenMenu:
+		um.Unlock()
+		um = nil
+		b.openMenu(chat, upd, res)
 	case router.KindBusy, router.KindNotAllowed, router.KindNeedAccount, router.KindReply:
 		um.Unlock()
 		um = nil
@@ -412,6 +417,34 @@ func (b *Bot) sayParts(chatID int64, body string, markup telego.ReplyMarkup) {
 }
 
 func (b *Bot) send(chatID int64, body string, markup telego.ReplyMarkup) (*telego.Message, error) {
+	// У сообщения одно поле reply_markup. В группе сначала уходит ReplyKeyboardRemove:
+	// клиент прячет залипшую reply-клавиатуру. Потом editMessageReplyMarkup вешает
+	// inline-кнопки. Снятие уже случилось и правкой не отменяется. Если правка не
+	// прошла, текст уже в чате и клавиатура скрыта.
+	var groupInline *telego.InlineKeyboardMarkup
+	if chatID < 0 {
+		groupInline = ui.InlineForGroup(markup)
+		markup = &telego.ReplyKeyboardRemove{RemoveKeyboard: true}
+	}
+	msg, err := b.deliver(chatID, body, markup)
+	if err != nil || msg == nil || chatID >= 0 || groupInline == nil {
+		return msg, err
+	}
+	if msg.MessageID == 0 {
+		b.log.Warn("group chat=%d: пустой message_id, клавиатура снята без меню", chatID)
+		return msg, nil
+	}
+	if _, editErr := b.api.EditMessageReplyMarkup(b.baseCtx(), &telego.EditMessageReplyMarkupParams{
+		ChatID:      telego.ChatID{ID: chatID},
+		MessageID:   msg.MessageID,
+		ReplyMarkup: groupInline,
+	}); editErr != nil {
+		b.log.Warn("group chat=%d: не удалось добавить меню: %v", chatID, editErr)
+	}
+	return msg, nil
+}
+
+func (b *Bot) deliver(chatID int64, body string, markup telego.ReplyMarkup) (*telego.Message, error) {
 	out := prepareOutbound(body)
 	if out.rich && utf8.RuneCountInString(out.html) <= richTextLimit {
 		msg, err := b.api.SendRichMessage(b.baseCtx(), &RichSendParams{
@@ -450,6 +483,34 @@ func (b *Bot) send(chatID int64, body string, markup telego.ReplyMarkup) (*teleg
 		Text:        out.plain,
 		ReplyMarkup: markup,
 	})
+}
+
+func (b *Bot) openMenu(chatID int64, upd telego.Update, res router.Result) {
+	screen := res.Payload
+	if screen == "" {
+		screen = "main"
+	}
+	kb := ui.ScreenActions(screen)
+	msgID := callbackMessageID(upd)
+	if msgID != 0 {
+		_, err := b.api.EditMessageReplyMarkup(b.baseCtx(), &telego.EditMessageReplyMarkupParams{
+			ChatID:      telego.ChatID{ID: chatID},
+			MessageID:   msgID,
+			ReplyMarkup: kb,
+		})
+		if err == nil {
+			return
+		}
+		b.log.Warn("group chat=%d: не удалось открыть меню: %v", chatID, err)
+	}
+	b.say(chatID, "Меню", kb)
+}
+
+func callbackMessageID(upd telego.Update) int {
+	if upd.CallbackQuery == nil || upd.CallbackQuery.Message == nil {
+		return 0
+	}
+	return upd.CallbackQuery.Message.GetMessageID()
 }
 
 func (b *Bot) edit(chatID int64, messageID int, body string, markup *telego.InlineKeyboardMarkup) error {

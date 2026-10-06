@@ -1,6 +1,11 @@
 package router
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"bot-builder-agent/internal/telegram/ui"
+)
 
 func TestCommandsMatchButtons(t *testing.T) {
 	base := Input{State: StateMain, HasToken: true, Allowed: true, ActiveProject: 4}
@@ -152,6 +157,76 @@ func TestConfirmsAndPaging(t *testing.T) {
 	ren := Handle(Input{State: StateWaitRename, Allowed: true, HasToken: true, RenameProjectID: 6, Text: "Новое"})
 	if ren.Kind != KindRenameProject || ren.ProjectID != 6 || ren.Payload != "Новое" {
 		t.Fatalf("%+v", ren)
+	}
+}
+
+func TestMenuCallbackReturnsMainActions(t *testing.T) {
+	kb, ok := ui.ActionsForMenu("menu")
+	if !ok {
+		t.Fatal("menu")
+	}
+	base := Input{State: StateChat, HasToken: true, Allowed: true, ActiveProject: 4}
+	opened := Handle(withCB(base, "menu"))
+	if opened.Kind != KindOpenMenu || opened.Payload != "main" {
+		t.Fatalf("открытие меню: %+v", opened)
+	}
+	for _, data := range ui.CallbacksOf(kb) {
+		got := Handle(withCB(base, data))
+		switch data {
+		case "nav:task":
+			if got.Kind != KindReply || got.Next != StateChat {
+				t.Fatalf("задача: %+v", got)
+			}
+			low := strings.ToLower(got.Text)
+			if !strings.Contains(low, "ответ") || !strings.Contains(low, "упомян") {
+				t.Fatalf("в группе задача должна просить ответ или упоминание: %q", got.Text)
+			}
+			if got.Kind == KindAskAgent {
+				t.Fatal("задача в группе ушла в агента")
+			}
+		case "nav:projects":
+			sameKind(t, got, Handle(withText(base, ui.BtnProjects)))
+		case "nav:bots":
+			sameKind(t, got, Handle(withText(base, ui.BtnBots)))
+		case "nav:account":
+			sameKind(t, got, Handle(withText(base, ui.BtnAccount)))
+		default:
+			t.Fatalf("лишняя кнопка главного меню %s", data)
+		}
+	}
+	account, ok := ui.ActionsForMenu("menu:account")
+	if !ok {
+		t.Fatal("account")
+	}
+	for _, data := range ui.CallbacksOf(account) {
+		got := Handle(withCB(base, data))
+		label := map[string]string{
+			"nav:token":  ui.BtnToken,
+			"nav:status": ui.BtnStatus,
+			"nav:reset":  ui.BtnReset,
+			"nav:logout": ui.BtnLogout,
+			"nav:back":   ui.BtnBack,
+		}[data]
+		if label == "" {
+			t.Fatalf("лишняя кнопка аккаунта %s", data)
+		}
+		sameKind(t, got, Handle(withText(base, label)))
+	}
+	if Handle(withCB(base, "nav:archive")).Archived != Handle(withText(base, ui.BtnArchive)).Archived {
+		t.Fatal("архив")
+	}
+	if Handle(withCB(base, "nav:create")).Kind != Handle(withText(base, ui.BtnCreate)).Kind {
+		t.Fatal("создать")
+	}
+	if Handle(withCB(base, "nav:connect")).Kind != KindAskBotToken {
+		t.Fatal("подключить")
+	}
+}
+
+func sameKind(t *testing.T, got, want Result) {
+	t.Helper()
+	if got.Kind != want.Kind || got.Next != want.Next {
+		t.Fatalf("%+v vs %+v", got, want)
 	}
 }
 

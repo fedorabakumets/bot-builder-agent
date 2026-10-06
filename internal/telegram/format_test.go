@@ -15,13 +15,15 @@ import (
 
 type captureAPI struct {
 	*fakeAPI
-	rejectHTML bool
-	rejectRich bool
-	modes      []string
-	texts      []string
-	markups    []telego.ReplyMarkup
-	richHTML   []string
-	richMD     []string
+	rejectHTML    bool
+	rejectRich    bool
+	modes         []string
+	texts         []string
+	markups       []telego.ReplyMarkup
+	edits         []telego.ReplyMarkup
+	editMarkupErr error
+	richHTML      []string
+	richMD        []string
 }
 
 func (c *captureAPI) SendMessage(_ context.Context, params *telego.SendMessageParams) (*telego.Message, error) {
@@ -73,6 +75,14 @@ func (c *captureAPI) EditRichMessage(_ context.Context, params *RichEditParams) 
 	c.texts = append(c.texts, text)
 	c.markups = append(c.markups, params.ReplyMarkup)
 	return &telego.Message{MessageID: params.MessageID, Text: text}, nil
+}
+
+func (c *captureAPI) EditMessageReplyMarkup(_ context.Context, params *telego.EditMessageReplyMarkupParams) (*telego.Message, error) {
+	if c.editMarkupErr != nil {
+		return nil, c.editMarkupErr
+	}
+	c.edits = append(c.edits, params.ReplyMarkup)
+	return &telego.Message{MessageID: params.MessageID, Chat: telego.Chat{ID: params.ChatID.ID}}, nil
 }
 
 func (c *captureAPI) EditMessageText(_ context.Context, params *telego.EditMessageTextParams) (*telego.Message, error) {

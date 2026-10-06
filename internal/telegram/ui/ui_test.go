@@ -49,6 +49,13 @@ func TestInlineCallbacksFit(t *testing.T) {
 		ConfirmKeyboard("yes:bdel:3:7", "no:bdel:3:7"),
 		ConfirmKeyboard("yes:agent", "no:agent"),
 		StopKeyboard(),
+		MenuButton("main"),
+		MenuButton("account"),
+		ScreenActions("main"),
+		ScreenActions("account"),
+		ScreenActions("projects"),
+		ScreenActions("bots"),
+		ScreenActions("wait"),
 	}
 	for _, kb := range boards {
 		for _, data := range CallbacksOf(kb) {
@@ -71,6 +78,62 @@ func TestInlineCallbacksFit(t *testing.T) {
 	if !ok || !page.Archived || page.Page != 2 {
 		t.Fatalf("%+v", page)
 	}
+}
+
+func TestMenuCallbackReturnsMainActions(t *testing.T) {
+	kb, ok := ActionsForMenu("menu")
+	if !ok || kb == nil {
+		t.Fatal("menu")
+	}
+	got := inlineLabels(kb)
+	for _, need := range []string{BtnTask, BtnProjects, BtnBots, BtnAccount} {
+		if !has(got, need) {
+			t.Fatalf("нет %q в %v", need, got)
+		}
+	}
+	if len(got) != 4 {
+		t.Fatalf("главное меню: %v", got)
+	}
+	for _, data := range CallbacksOf(kb) {
+		cb, ok := ParseCallback(data)
+		if !ok || cb.Name == "" {
+			t.Fatalf("кнопка меню %q", data)
+		}
+	}
+	account, ok := ActionsForMenu("menu:account")
+	if !ok {
+		t.Fatal("menu:account")
+	}
+	acc := inlineLabels(account)
+	for _, need := range []string{BtnToken, BtnStatus, BtnReset, BtnLogout, BtnBack} {
+		if !has(acc, need) {
+			t.Fatalf("аккаунт без %q: %v", need, acc)
+		}
+	}
+	projects, ok := ActionsForMenu("menu:projects")
+	if !ok || !has(inlineLabels(projects), BtnCreate) || !has(inlineLabels(projects), BtnArchive) {
+		t.Fatal("проекты")
+	}
+	bots, ok := ActionsForMenu("menu:bots")
+	if !ok || !has(inlineLabels(bots), BtnConnect) || !has(inlineLabels(bots), BtnBack) {
+		t.Fatal("боты")
+	}
+	if _, ok := ActionsForMenu("nav:task"); ok {
+		t.Fatal("nav — это не открытие меню")
+	}
+	if _, ok := ParseCallback("menu:nope"); ok {
+		t.Fatal("чужой экран")
+	}
+}
+
+func inlineLabels(kb *telego.InlineKeyboardMarkup) []string {
+	var out []string
+	for _, row := range kb.InlineKeyboard {
+		for _, button := range row {
+			out = append(out, button.Text)
+		}
+	}
+	return out
 }
 
 func makeProjects(n int) []Project {

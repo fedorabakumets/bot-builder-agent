@@ -331,6 +331,10 @@ func (f *fakeAPI) SendMessage(_ context.Context, params *telego.SendMessageParam
 	return &telego.Message{MessageID: f.next, Chat: telego.Chat{ID: params.ChatID.ID}, Text: params.Text}, nil
 }
 
+func (f *fakeAPI) EditMessageReplyMarkup(_ context.Context, params *telego.EditMessageReplyMarkupParams) (*telego.Message, error) {
+	return &telego.Message{MessageID: params.MessageID, Chat: telego.Chat{ID: params.ChatID.ID}}, nil
+}
+
 func (f *fakeAPI) EditMessageText(_ context.Context, params *telego.EditMessageTextParams) (*telego.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

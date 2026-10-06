@@ -16,6 +16,7 @@ type Callback struct {
 	Days      int
 	Archived  bool
 	Yes       bool
+	Screen    string
 }
 
 // ParseCallback разбирает короткие callback_data меню.
@@ -24,11 +25,21 @@ func ParseCallback(data string) (Callback, bool) {
 	if data == "" {
 		return Callback{}, false
 	}
+	if data == "menu" {
+		return Callback{Name: "menu", Screen: "main"}, true
+	}
 	parts := strings.Split(data, ":")
 	if len(parts) < 2 {
 		return Callback{}, false
 	}
 	switch parts[0] {
+	case "menu":
+		return parseMenu(parts)
+	case "nav":
+		if len(parts) != 2 || !knownNav(parts[1]) {
+			return Callback{}, false
+		}
+		return Callback{Name: "nav_" + parts[1]}, true
 	case "run":
 		if len(parts) == 2 && parts[1] == "stop" {
 			return Callback{Name: "run_stop"}, true
@@ -66,6 +77,33 @@ func ParseCallback(data string) (Callback, bool) {
 		return parseBot(parts)
 	}
 	return Callback{}, false
+}
+
+func parseMenu(parts []string) (Callback, bool) {
+	if len(parts) == 1 {
+		return Callback{Name: "menu", Screen: "main"}, true
+	}
+	if len(parts) != 2 {
+		return Callback{}, false
+	}
+	switch parts[1] {
+	case "main", "chat":
+		return Callback{Name: "menu", Screen: "main"}, true
+	case "account", "projects", "bots", "wait":
+		return Callback{Name: "menu", Screen: parts[1]}, true
+	default:
+		return Callback{}, false
+	}
+}
+
+func knownNav(action string) bool {
+	switch action {
+	case "task", "projects", "bots", "account", "token", "status", "reset", "logout",
+		"back", "cancel", "create", "active", "archive", "connect":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseProject(parts []string) (Callback, bool) {

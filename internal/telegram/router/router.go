@@ -29,6 +29,7 @@ type Kind string
 
 const (
 	KindReply            Kind = "reply"
+	KindOpenMenu         Kind = "open_menu"
 	KindNotAllowed       Kind = "not_allowed"
 	KindBusy             Kind = "busy"
 	KindNeedAccount      Kind = "need_account"
@@ -252,6 +253,15 @@ func fromCallback(in Input) Result {
 	if !ok {
 		return Result{Kind: KindReply, Next: in.State, Text: "Не понял кнопку."}
 	}
+	if cb.Name == "menu" {
+		return openMenu(in, cb.Screen)
+	}
+	if label, ok := navButton(cb.Name); ok {
+		if cb.Name == "nav_task" {
+			return Result{Kind: KindReply, Next: StateChat, Text: groupTaskText}
+		}
+		return fromButton(in, label)
+	}
 	if cb.Name != "run_stop" && cb.Name != "agent" && cb.Name != "logout" && !in.HasToken {
 		return needAccount(in)
 	}
@@ -324,6 +334,58 @@ func fromCallback(in Input) Result {
 	}
 }
 
+func openMenu(in Input, screen string) Result {
+	next := in.State
+	switch screen {
+	case "account":
+		next = StateAccount
+	case "projects":
+		next = StateProjects
+	case "bots":
+		next = StateBots
+	case "wait":
+	default:
+		screen = "main"
+		next = StateMain
+	}
+	return Result{Kind: KindOpenMenu, Next: next, Payload: screen, Text: "Меню"}
+}
+
+func navButton(name string) (string, bool) {
+	switch name {
+	case "nav_task":
+		return ui.BtnTask, true
+	case "nav_projects":
+		return ui.BtnProjects, true
+	case "nav_bots":
+		return ui.BtnBots, true
+	case "nav_account":
+		return ui.BtnAccount, true
+	case "nav_token":
+		return ui.BtnToken, true
+	case "nav_status":
+		return ui.BtnStatus, true
+	case "nav_reset":
+		return ui.BtnReset, true
+	case "nav_logout":
+		return ui.BtnLogout, true
+	case "nav_back":
+		return ui.BtnBack, true
+	case "nav_cancel":
+		return ui.BtnCancel, true
+	case "nav_create":
+		return ui.BtnCreate, true
+	case "nav_active":
+		return ui.BtnActive, true
+	case "nav_archive":
+		return ui.BtnArchive, true
+	case "nav_connect":
+		return ui.BtnConnect, true
+	default:
+		return "", false
+	}
+}
+
 func listProjects(in Input, archived bool, page int) Result {
 	if !in.HasToken {
 		return needAccount(in)
@@ -379,5 +441,7 @@ func parseCommand(text string) (cmd, args string, ok bool) {
 }
 
 const startText = "Я собираю и правлю ботов в конструкторе.\n\nОткройте «Аккаунт» и пришлите блок mcpServers из вкладки «Агент». Затем напишите задачу своими словами: какого бота собрать или что изменить. «Проекты» и «Боты» открывают списки."
+
+const groupTaskText = "Напишите задачу ответом на сообщение бота или упомяните его. Сообщение без обращения в группе бот не читает."
 
 const helpText = "Напишите задачу обычным сообщением — я начну её сразу.\nКнопки внизу повторяют команды.\n/token сохранить блок mcpServers или токен mcp_…\n/status статус\n/projects проекты\n/bots боты активного проекта\n/reset очистить диалог\n/logout забыть токен\n/cancel выйти из ввода"
