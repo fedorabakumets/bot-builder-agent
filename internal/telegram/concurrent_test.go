@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -17,6 +19,7 @@ import (
 	"bot-builder-agent/internal/mcp"
 	"bot-builder-agent/internal/openrouter"
 	"bot-builder-agent/internal/store"
+	"bot-builder-agent/internal/telegram/ui"
 )
 
 func TestManyChatsRunTogether(t *testing.T) {
@@ -262,6 +265,131 @@ func TestRunAgentDeletesStatusInsteadOfGotovo(t *testing.T) {
 				t.Fatalf("delete %+v", deleted)
 			}
 		})
+	}
+}
+
+func TestRunAgentStatusIsEditableAndFinalRemovesKeyboard(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		chatID int64
+		group  bool
+	}{
+		{name: "private", chatID: 7},
+		{name: "group", chatID: -1003795356552, group: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, raw, run := newTestBot(t)
+			api := &captureAPI{fakeAPI: raw}
+			b.api = api
+			if tc.group {
+				b.self = telego.User{ID: 99, Username: "builder", IsBot: true}
+			}
+			if err := b.store.SaveToken(context.Background(), 7, "mcp_user_7_xx"); err != nil {
+				t.Fatal(err)
+			}
+			run.fn = func(_ context.Context, req agent.Request) (agent.Result, error) {
+				req.OnTool("db_list_bots")
+				return agent.Result{Reply: "ответ агента"}, nil
+			}
+			msg := &telego.Message{
+				From: &telego.User{ID: 7},
+				Chat: telego.Chat{ID: tc.chatID},
+				Text: "старт",
+			}
+			if tc.group {
+				msg.Chat.Type = telego.ChatTypeSupergroup
+				msg.Text = "@builder старт"
+				msg.Entities = []telego.MessageEntity{{
+					Type:   telego.EntityTypeMention,
+					Offset: 0,
+					Length: len("@builder"),
+				}}
+			}
+			b.process(telego.Update{Message: msg})
+
+			if len(api.markups) < 3 || len(api.texts) < 3 {
+				t.Fatalf("markups %d texts %+v", len(api.markups), api.texts)
+			}
+			if _, ok := api.markups[0].(*telego.ReplyKeyboardRemove); ok {
+				t.Fatal("статус ушёл с ReplyKeyboardRemove")
+			}
+			stop, ok := api.markups[0].(*telego.InlineKeyboardMarkup)
+			if !ok || stop.InlineKeyboard[0][0].CallbackData != "run:stop" {
+				t.Fatalf("статус без стопа: %T %+v", api.markups[0], api.markups[0])
+			}
+			if api.texts[0] != "Думаю…" {
+				t.Fatalf("первый текст %q", api.texts[0])
+			}
+			if len(api.edits) != 1 {
+				t.Fatalf("правок меню %d: статус не должен получать editMessageReplyMarkup", len(api.edits))
+			}
+			if api.texts[1] != "Вызываю db_list_bots" {
+				t.Fatalf("правка статуса %q", api.texts[1])
+			}
+			edited, ok := api.markups[1].(*telego.InlineKeyboardMarkup)
+			if !ok || edited.InlineKeyboard[0][0].CallbackData != "run:stop" {
+				t.Fatalf("правка без стопа: %+v", api.markups[1])
+			}
+			removed, ok := api.markups[len(api.markups)-1].(*telego.ReplyKeyboardRemove)
+			if !ok || !removed.RemoveKeyboard {
+				t.Fatalf("финал: %T", api.markups[len(api.markups)-1])
+			}
+			if api.texts[len(api.texts)-1] != "ответ агента" {
+				t.Fatalf("ответ %q", api.texts[len(api.texts)-1])
+			}
+			menu, ok := api.edits[0].(*telego.InlineKeyboardMarkup)
+			if !ok || menu.InlineKeyboard[0][0].Text != ui.BtnMenu {
+				t.Fatalf("меню финала: %+v", api.edits[0])
+			}
+			raw.mu.Lock()
+			deleted := append([]int(nil), raw.deleted...)
+			raw.mu.Unlock()
+			if len(deleted) != 1 || deleted[0] == 0 {
+				t.Fatalf("delete %+v", deleted)
+			}
+		})
+	}
+}
+
+func TestOnToolEditFailureIsLogged(t *testing.T) {
+	b, raw, run := newTestBot(t)
+	logPath := t.TempDir() + "/bot.log"
+	log, err := logger.New("WARN", logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = log.Close() })
+	b.log = log
+	api := &captureAPI{
+		fakeAPI:     raw,
+		editTextErr: errors.New("Bad Request: message can't be edited"),
+	}
+	b.api = api
+	if err := b.store.SaveToken(context.Background(), 7, "mcp_user_7_xx"); err != nil {
+		t.Fatal(err)
+	}
+	run.fn = func(_ context.Context, req agent.Request) (agent.Result, error) {
+		req.OnTool("db_list_bots")
+		return agent.Result{Reply: "ответ агента"}, nil
+	}
+	b.process(textUpdate(7, "старт"))
+	body, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logged := string(body)
+	if !strings.Contains(logged, "не удалось обновить статус") || !strings.Contains(logged, "message can't be edited") {
+		t.Fatalf("лог: %s", logged)
+	}
+	if _, ok := api.markups[0].(*telego.ReplyKeyboardRemove); ok {
+		t.Fatal("статус ушёл с ReplyKeyboardRemove")
+	}
+	removed, ok := api.markups[len(api.markups)-1].(*telego.ReplyKeyboardRemove)
+	if !ok || !removed.RemoveKeyboard {
+		t.Fatalf("финал: %T", api.markups[len(api.markups)-1])
+	}
+	if api.texts[len(api.texts)-1] != "ответ агента" {
+		t.Fatalf("ответ %q", api.texts)
 	}
 }
 

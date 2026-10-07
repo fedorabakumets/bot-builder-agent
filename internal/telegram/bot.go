@@ -209,11 +209,17 @@ func (b *Bot) process(upd telego.Update) {
 }
 
 func (b *Bot) runAgent(ctx context.Context, userID, chatID int64, task string) {
-	status, err := b.send(chatID, "Думаю…", ui.StopKeyboard())
+	// «Думаю…» и «Вызываю …» — обычное сообщение с кнопкой «Стоп».
+	// send сюда нельзя: ReplyKeyboardRemove делает сообщение нередактируемым,
+	// и правка на «Вызываю» не проходит. В конце статус удаляется. Если delete
+	// не прошёл, последнее статусное сообщение остаётся как есть — «Готово»
+	// не пишем, ответ всё равно отправляем.
+	status, err := b.sendStatus(chatID, "Думаю…")
 	statusID := 0
 	if err == nil && status != nil {
 		statusID = status.MessageID
 	}
+	defer b.deleteStatus(chatID, statusID)
 	history, err := b.store.History(ctx, userID)
 	if err != nil {
 		b.say(chatID, "Не удалось прочитать диалог.", ui.MainKeyboard())
@@ -235,21 +241,14 @@ func (b *Bot) runAgent(ctx context.Context, userID, chatID int64, task string) {
 			if statusID == 0 {
 				return
 			}
-			_ = b.edit(chatID, statusID, "Вызываю "+name, ui.StopKeyboard())
+			if err := b.edit(chatID, statusID, "Вызываю "+name, ui.StopKeyboard()); err != nil {
+				b.log.Warn("chat=%d: не удалось обновить статус: %v", chatID, err)
+			}
 		},
 		Confirm: func(c context.Context, name string, _ json.RawMessage) (bool, error) {
 			return b.confirm(c, userID, chatID, name)
 		},
 	})
-	// «Думаю…» и «Вызываю …» остаются, пока идёт запрос. В конце статус
-	// удаляется. Если delete не прошёл, последнее статусное сообщение
-	// остаётся как есть — «Готово» не пишем, ответ всё равно отправляем.
-	if statusID != 0 {
-		_ = b.api.DeleteMessage(b.baseCtx(), &telego.DeleteMessageParams{
-			ChatID:    telego.ChatID{ID: chatID},
-			MessageID: statusID,
-		})
-	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			b.say(chatID, "Остановил.", screenMarkup(router.StateChat))
@@ -415,6 +414,27 @@ func (b *Bot) say(chatID int64, body string, markup telego.ReplyMarkup) {
 
 func (b *Bot) sayParts(chatID int64, body string, markup telego.ReplyMarkup) {
 	b.say(chatID, body, markup)
+}
+
+// sendStatus шлёт живой статус обычным sendMessage и только inline-кнопкой
+// остановки. Без ReplyKeyboardRemove и без последующей правки клавиатуры:
+// сообщение с ReplyKeyboardRemove Telegram не даёт редактировать.
+func (b *Bot) sendStatus(chatID int64, body string) (*telego.Message, error) {
+	return b.api.SendMessage(b.baseCtx(), &telego.SendMessageParams{
+		ChatID:      telego.ChatID{ID: chatID},
+		Text:        body,
+		ReplyMarkup: ui.StopKeyboard(),
+	})
+}
+
+func (b *Bot) deleteStatus(chatID int64, messageID int) {
+	if messageID == 0 {
+		return
+	}
+	_ = b.api.DeleteMessage(b.baseCtx(), &telego.DeleteMessageParams{
+		ChatID:    telego.ChatID{ID: chatID},
+		MessageID: messageID,
+	})
 }
 
 func (b *Bot) send(chatID int64, body string, markup telego.ReplyMarkup) (*telego.Message, error) {

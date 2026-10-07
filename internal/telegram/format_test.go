@@ -22,6 +22,7 @@ type captureAPI struct {
 	markups       []telego.ReplyMarkup
 	edits         []telego.ReplyMarkup
 	editMarkupErr error
+	editTextErr   error
 	richHTML      []string
 	richMD        []string
 }
@@ -86,6 +87,9 @@ func (c *captureAPI) EditMessageReplyMarkup(_ context.Context, params *telego.Ed
 }
 
 func (c *captureAPI) EditMessageText(_ context.Context, params *telego.EditMessageTextParams) (*telego.Message, error) {
+	if c.editTextErr != nil {
+		return nil, c.editTextErr
+	}
 	if c.rejectHTML && params.ParseMode == telego.ModeHTML {
 		return nil, fmt.Errorf("telego: editMessageText: %w", &telegoapi.Error{
 			ErrorCode:   400,
