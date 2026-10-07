@@ -153,6 +153,7 @@ func (b *Bot) process(upd telego.Update) {
 		HasToken:        b.hasToken(uid),
 		Allowed:         b.cfg.Allowed(uid),
 		Busy:            sess.busy,
+		Group:           chat < 0,
 		ActiveProject:   b.activeProject(uid),
 		RenameProjectID: sess.renameID,
 	})
@@ -417,29 +418,26 @@ func (b *Bot) sayParts(chatID int64, body string, markup telego.ReplyMarkup) {
 }
 
 func (b *Bot) send(chatID int64, body string, markup telego.ReplyMarkup) (*telego.Message, error) {
-	// У сообщения одно поле reply_markup. В группе сначала уходит ReplyKeyboardRemove:
-	// клиент прячет залипшую reply-клавиатуру. Потом editMessageReplyMarkup вешает
-	// inline-кнопки. Снятие уже случилось и правкой не отменяется. Если правка не
-	// прошла, текст уже в чате и клавиатура скрыта.
-	var groupInline *telego.InlineKeyboardMarkup
-	if chatID < 0 {
-		groupInline = ui.InlineForGroup(markup)
-		markup = &telego.ReplyKeyboardRemove{RemoveKeyboard: true}
-	}
+	// У сообщения одно поле reply_markup. Сначала уходит ReplyKeyboardRemove:
+	// клиент прячет залипшую reply-клавиатуру и в личке, и в группе. Потом
+	// editMessageReplyMarkup вешает inline-кнопки. Снятие уже случилось и правкой
+	// не отменяется. Если правка не прошла, текст уже в чате и клавиатура скрыта.
+	menuInline := ui.InlineForGroup(markup)
+	markup = &telego.ReplyKeyboardRemove{RemoveKeyboard: true}
 	msg, err := b.deliver(chatID, body, markup)
-	if err != nil || msg == nil || chatID >= 0 || groupInline == nil {
+	if err != nil || msg == nil || menuInline == nil {
 		return msg, err
 	}
 	if msg.MessageID == 0 {
-		b.log.Warn("group chat=%d: пустой message_id, клавиатура снята без меню", chatID)
+		b.log.Warn("chat=%d: пустой message_id, клавиатура снята без меню", chatID)
 		return msg, nil
 	}
 	if _, editErr := b.api.EditMessageReplyMarkup(b.baseCtx(), &telego.EditMessageReplyMarkupParams{
 		ChatID:      telego.ChatID{ID: chatID},
 		MessageID:   msg.MessageID,
-		ReplyMarkup: groupInline,
+		ReplyMarkup: menuInline,
 	}); editErr != nil {
-		b.log.Warn("group chat=%d: не удалось добавить меню: %v", chatID, editErr)
+		b.log.Warn("chat=%d: не удалось добавить меню: %v", chatID, editErr)
 	}
 	return msg, nil
 }
@@ -501,7 +499,7 @@ func (b *Bot) openMenu(chatID int64, upd telego.Update, res router.Result) {
 		if err == nil {
 			return
 		}
-		b.log.Warn("group chat=%d: не удалось открыть меню: %v", chatID, err)
+		b.log.Warn("chat=%d: не удалось открыть меню: %v", chatID, err)
 	}
 	b.say(chatID, "Меню", kb)
 }

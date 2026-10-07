@@ -165,7 +165,7 @@ func TestMenuCallbackReturnsMainActions(t *testing.T) {
 	if !ok {
 		t.Fatal("menu")
 	}
-	base := Input{State: StateChat, HasToken: true, Allowed: true, ActiveProject: 4}
+	base := Input{State: StateChat, HasToken: true, Allowed: true, ActiveProject: 4, Group: true}
 	opened := Handle(withCB(base, "menu"))
 	if opened.Kind != KindOpenMenu || opened.Payload != "main" {
 		t.Fatalf("открытие меню: %+v", opened)
@@ -220,6 +220,22 @@ func TestMenuCallbackReturnsMainActions(t *testing.T) {
 	}
 	if Handle(withCB(base, "nav:connect")).Kind != KindAskBotToken {
 		t.Fatal("подключить")
+	}
+}
+
+func TestPrivateTaskMenuAsksToType(t *testing.T) {
+	in := Input{State: StateMain, HasToken: true, Allowed: true}
+	got := Handle(withCB(in, "nav:task"))
+	want := Handle(withText(in, ui.BtnTask))
+	if got.Kind != want.Kind || got.Next != want.Next || got.Text != want.Text {
+		t.Fatalf("личка: %+v, кнопка: %+v", got, want)
+	}
+	if strings.Contains(strings.ToLower(got.Text), "упомян") || strings.Contains(strings.ToLower(got.Text), "ответ") {
+		t.Fatalf("личке нельзя про упоминание: %q", got.Text)
+	}
+	next := Handle(Input{State: got.Next, HasToken: true, Allowed: true, Text: "собери бота"})
+	if next.Kind != KindAskAgent || next.Payload != "собери бота" {
+		t.Fatalf("следующий текст должен уйти агенту: %+v", next)
 	}
 }
 

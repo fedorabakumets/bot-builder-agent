@@ -274,7 +274,7 @@ func StopKeyboard() *telego.InlineKeyboardMarkup {
 }
 
 // MenuButton — одна inline-кнопка, которая раскрывает действия экрана.
-// В личке reply-клавиатура остаётся; в группе её заменяет эта кнопка.
+// И в личке, и в группе она заменяет постоянную reply-клавиатуру.
 func MenuButton(screen string) *telego.InlineKeyboardMarkup {
 	data := "menu"
 	switch screen {
@@ -328,6 +328,7 @@ func ActionsForMenu(data string) (*telego.InlineKeyboardMarkup, bool) {
 
 // InlineForGroup подменяет reply-клавиатуру одной кнопкой «Меню».
 // Уже inline-клавиатура (подтверждение, стоп, списки) остаётся как есть.
+// Так уходит каждое исходящее сообщение, и в личке, и в группе.
 func InlineForGroup(markup telego.ReplyMarkup) *telego.InlineKeyboardMarkup {
 	switch m := markup.(type) {
 	case *telego.InlineKeyboardMarkup:

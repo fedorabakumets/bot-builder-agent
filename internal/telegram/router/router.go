@@ -76,6 +76,7 @@ type Input struct {
 	HasToken        bool
 	Allowed         bool
 	Busy            bool
+	Group           bool
 	ActiveProject   int64
 	RenameProjectID int64
 }
@@ -257,7 +258,7 @@ func fromCallback(in Input) Result {
 		return openMenu(in, cb.Screen)
 	}
 	if label, ok := navButton(cb.Name); ok {
-		if cb.Name == "nav_task" {
+		if cb.Name == "nav_task" && in.Group {
 			return Result{Kind: KindReply, Next: StateChat, Text: groupTaskText}
 		}
 		return fromButton(in, label)
