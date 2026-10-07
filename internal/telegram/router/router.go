@@ -63,8 +63,6 @@ const (
 	KindAskBotToken      Kind = "ask_bot_token"
 	KindAddBotToken      Kind = "add_bot_token"
 	KindAskAgent         Kind = "ask_agent"
-	KindAgentAllow       Kind = "agent_allow"
-	KindAgentDeny        Kind = "agent_deny"
 	KindStopRun          Kind = "stop_run"
 )
 
@@ -131,12 +129,6 @@ func busy(in Input) Result {
 		cb, ok := ui.ParseCallback(in.Callback)
 		if ok && cb.Name == "run_stop" {
 			return Result{Kind: KindStopRun, Next: in.State, Text: "Останавливаю."}
-		}
-		if ok && cb.Name == "agent" && cb.Yes {
-			return Result{Kind: KindAgentAllow, Next: in.State}
-		}
-		if ok && cb.Name == "agent" && !cb.Yes {
-			return Result{Kind: KindAgentDeny, Next: in.State}
 		}
 	}
 	return Result{Kind: KindBusy, Next: in.State, Text: "Уже работаю над предыдущим запросом."}
@@ -263,14 +255,12 @@ func fromCallback(in Input) Result {
 		}
 		return fromButton(in, label)
 	}
-	if cb.Name != "run_stop" && cb.Name != "agent" && cb.Name != "logout" && !in.HasToken {
+	if cb.Name != "run_stop" && cb.Name != "logout" && !in.HasToken {
 		return needAccount(in)
 	}
 	switch cb.Name {
 	case "run_stop":
 		return Result{Kind: KindReply, Next: in.State, Text: "Сейчас нечего останавливать."}
-	case "agent":
-		return Result{Kind: KindReply, Next: in.State, Text: "Нечего подтверждать."}
 	case "logout":
 		if !cb.Yes {
 			return Result{Kind: KindReply, Next: StateAccount, Text: "Токен на месте."}

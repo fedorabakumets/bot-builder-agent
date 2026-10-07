@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 	"unicode/utf8"
 
 	"github.com/mymmrac/telego"
@@ -51,9 +50,8 @@ type Bot struct {
 	mcp    *mcp.Client
 	runner agentRunner
 
-	root       context.Context
-	confirmFor time.Duration
-	self       telego.User
+	root context.Context
+	self telego.User
 
 	mu    sync.Mutex
 	locks map[int64]*sync.Mutex
@@ -65,7 +63,6 @@ type session struct {
 	renameID int64
 	busy     bool
 	cancel   context.CancelFunc
-	confirm  chan bool
 }
 
 var _ tgAPI = (*liveAPI)(nil)
@@ -178,20 +175,12 @@ func (b *Bot) process(upd telego.Update) {
 		sess2.busy = false
 		sess2.cancel = nil
 		um2.Unlock()
-	case router.KindAgentAllow, router.KindAgentDeny, router.KindStopRun:
-		ch := sess.confirm
+	case router.KindStopRun:
 		cancel := sess.cancel
 		um.Unlock()
 		um = nil
-		if res.Kind == router.KindStopRun && cancel != nil {
+		if cancel != nil {
 			cancel()
-		}
-		if ch != nil {
-			approve := res.Kind == router.KindAgentAllow
-			select {
-			case ch <- approve:
-			default:
-			}
 		}
 	case router.KindOpenMenu:
 		um.Unlock()
@@ -245,9 +234,6 @@ func (b *Bot) runAgent(ctx context.Context, userID, chatID int64, task string) {
 				b.log.Warn("chat=%d: не удалось обновить статус: %v", chatID, err)
 			}
 		},
-		Confirm: func(c context.Context, name string, _ json.RawMessage) (bool, error) {
-			return b.confirm(c, userID, chatID, name)
-		},
 	})
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -266,38 +252,6 @@ func (b *Bot) runAgent(ctx context.Context, userID, chatID int64, task string) {
 		b.log.Error("запись истории user=%d: %v", userID, err)
 	}
 	b.sayParts(chatID, text.Redact(result.Reply), ui.MainKeyboard())
-}
-
-func (b *Bot) confirm(ctx context.Context, userID, chatID int64, name string) (bool, error) {
-	ch := make(chan bool, 1)
-	sess, um := b.lockUser(userID)
-	sess.confirm = ch
-	um.Unlock()
-	defer func() {
-		sess, um := b.lockUser(userID)
-		if sess.confirm == ch {
-			sess.confirm = nil
-		}
-		um.Unlock()
-	}()
-	b.say(chatID, "Подтвердить вызов "+name+"?", ui.ConfirmKeyboard("yes:agent", "no:agent"))
-	timer := time.NewTimer(b.confirmTimeout())
-	defer timer.Stop()
-	select {
-	case v := <-ch:
-		return v, nil
-	case <-ctx.Done():
-		return false, ctx.Err()
-	case <-timer.C:
-		return false, nil
-	}
-}
-
-func (b *Bot) confirmTimeout() time.Duration {
-	if b.confirmFor > 0 {
-		return b.confirmFor
-	}
-	return 2 * time.Minute
 }
 
 func (b *Bot) lockUser(id int64) (*session, *sync.Mutex) {

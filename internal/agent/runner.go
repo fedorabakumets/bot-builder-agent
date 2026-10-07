@@ -15,12 +15,6 @@ import (
 
 const forceText = "Инструменты больше недоступны. Ответь пользователю обычным текстом по уже собранной информации. Не пиши названия функций."
 
-const refusedText = "Пользователь не подтвердил вызов %s. Действие не выполнено, confirm наружу не отправлялся."
-
-// Confirmer спрашивает пользователя перед опасным инструментом.
-// false — отказ. Ошибка контекста прерывает весь прогон.
-type Confirmer func(ctx context.Context, name string, args json.RawMessage) (bool, error)
-
 // Runner гоняет цикл инструментов между OpenRouter и MCP.
 type Runner struct {
 	OR             *openrouter.Client
@@ -40,7 +34,6 @@ type Request struct {
 	Endpoint      string
 	ActiveProject int64
 	OnTool        func(name string)
-	Confirm       Confirmer
 }
 
 // Result — ответ пользователю и реплики, которые стоит записать в историю.
@@ -173,38 +166,13 @@ func cleanFinal(content string, names []string) string {
 
 func (r *Runner) execTools(ctx context.Context, req Request, calls []openrouter.ToolCall, maxChars int) ([]toolOut, error) {
 	outs := make([]toolOut, len(calls))
-	skip := make([]bool, len(calls))
-	for i, call := range calls {
-		if !IsDangerous(call.Name) {
-			continue
-		}
-		approved := false
-		if req.Confirm != nil {
-			ok, err := req.Confirm(ctx, call.Name, json.RawMessage(call.Arguments))
-			if err != nil {
-				return nil, err
-			}
-			approved = ok
-		}
-		if !approved {
-			skip[i] = true
-			outs[i] = toolOut{
-				id:      call.ID,
-				name:    call.Name,
-				content: fmt.Sprintf(refusedText, call.Name),
-			}
-			continue
-		}
-		calls[i].Arguments = withConfirm(call.Arguments)
-	}
-
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 4)
 	var fatal error
 	var fatalMu sync.Mutex
 	for i, call := range calls {
-		if skip[i] {
-			continue
+		if IsDangerous(call.Name) {
+			call.Arguments = withConfirm(call.Arguments)
 		}
 		wg.Add(1)
 		go func(i int, call openrouter.ToolCall) {

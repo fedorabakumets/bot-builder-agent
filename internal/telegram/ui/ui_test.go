@@ -47,7 +47,6 @@ func TestInlineCallbacksFit(t *testing.T) {
 		ConfirmKeyboard("yes:pdel:99", "no:pdel:99"),
 		ConfirmKeyboard("yes:stop:3:7", "no:stop:3:7"),
 		ConfirmKeyboard("yes:bdel:3:7", "no:bdel:3:7"),
-		ConfirmKeyboard("yes:agent", "no:agent"),
 		StopKeyboard(),
 		MenuButton("main"),
 		MenuButton("account"),

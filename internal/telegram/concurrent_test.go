@@ -163,20 +163,11 @@ func TestStopOneChatDoesNotStopAnother(t *testing.T) {
 	}
 }
 
-func TestConfirmGoesToTheRightChat(t *testing.T) {
+func TestAgentRunDoesNotAskToConfirm(t *testing.T) {
 	b, api, run := newTestBot(t)
-	b.confirmFor = 400 * time.Millisecond
 	run.fn = func(ctx context.Context, req agent.Request) (agent.Result, error) {
-		ok, err := req.Confirm(ctx, "db_stop_bot", nil)
-		if err != nil {
-			return agent.Result{}, err
-		}
-		word := "нет"
-		if ok {
-			word = "да"
-		}
 		return agent.Result{
-			Reply:      word + " " + req.UserText,
+			Reply:      "готово " + req.UserText,
 			Transcript: []openrouter.Message{{Role: "user", Content: req.UserText}},
 		}, nil
 	}
@@ -196,25 +187,13 @@ func TestConfirmGoesToTheRightChat(t *testing.T) {
 		defer wg.Done()
 		b.process(textUpdate(2, "задача 2"))
 	}()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if countText(api.snapshot(), "Подтвердить вызов db_stop_bot?") >= 2 {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if countText(api.snapshot(), "Подтвердить вызов db_stop_bot?") < 2 {
-		t.Fatal("оба чата должны спросить подтверждение")
-	}
-	b.process(callbackUpdate(2, "no:agent"))
-	b.process(callbackUpdate(1, "yes:agent"))
 	wait(t, &wg)
 	texts := api.snapshot()
-	if !hasText(texts, 1, "да задача 1") {
-		t.Fatal("первый чат не подтвердил свой вызов")
+	if countText(texts, "Подтвердить вызов db_stop_bot?") != 0 {
+		t.Fatal("агент спросил подтверждение")
 	}
-	if !hasText(texts, 2, "нет задача 2") {
-		t.Fatal("второй чат получил чужое «да»")
+	if !hasText(texts, 1, "готово задача 1") || !hasText(texts, 2, "готово задача 2") {
+		t.Fatalf("чаты не завершились без Да/Нет: %+v", texts)
 	}
 }
 

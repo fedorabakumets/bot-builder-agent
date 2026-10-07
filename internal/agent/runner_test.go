@@ -23,6 +23,12 @@ func TestPromptHidesToken(t *testing.T) {
 	if strings.Contains(p, "mcp_") {
 		t.Fatal("в промпте не должно быть токена")
 	}
+	if strings.Contains(p, "спросит подтверждение") || strings.Contains(p, "Да / Нет") {
+		t.Fatal("промпт всё ещё обещает спросить подтверждение")
+	}
+	if !strings.Contains(p, "только если пользователь явно попросил") {
+		t.Fatal("промпт должен запрещать выдуманные опасные действия")
+	}
 }
 
 func TestTextualCall(t *testing.T) {
@@ -39,6 +45,7 @@ func TestRunnerToolsConfirmTruncateAndSecret(t *testing.T) {
 	var mu sync.Mutex
 	var orBodies []string
 	var mcpCalls []string
+	var mcpArgs []map[string]any
 	var mcpAuth []string
 
 	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -48,11 +55,13 @@ func TestRunnerToolsConfirmTruncateAndSecret(t *testing.T) {
 		if strings.Contains(string(body), "tools/call") {
 			var req struct {
 				Params struct {
-					Name string `json:"name"`
+					Name      string         `json:"name"`
+					Arguments map[string]any `json:"arguments"`
 				} `json:"params"`
 			}
 			_ = json.Unmarshal(body, &req)
 			mcpCalls = append(mcpCalls, req.Params.Name)
+			mcpArgs = append(mcpArgs, req.Params.Arguments)
 		}
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
@@ -106,27 +115,27 @@ func TestRunnerToolsConfirmTruncateAndSecret(t *testing.T) {
 		MaxRounds: 4, MaxResultChars: 30, MaxTokens: 100, Temperature: 0,
 	}
 	secret := "mcp_should_not_leak_into_openrouter"
-	confirmed := false
 	res, err := runner.Run(context.Background(), Request{
 		Token:    secret,
 		UserText: "останови",
-		Confirm: func(context.Context, string, json.RawMessage) (bool, error) {
-			confirmed = true
-			return false, nil
-		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !confirmed {
-		t.Fatal("подтверждение не спросили")
-	}
 	mu.Lock()
 	defer mu.Unlock()
-	for _, call := range mcpCalls {
-		if call == "db_stop_bot" {
-			t.Fatal("опасный тул ушёл без согласия")
+	stopped := false
+	for i, call := range mcpCalls {
+		if call != "db_stop_bot" {
+			continue
 		}
+		stopped = true
+		if mcpArgs[i]["confirm"] != true {
+			t.Fatalf("db_stop_bot без confirm:true: %+v", mcpArgs[i])
+		}
+	}
+	if !stopped {
+		t.Fatal("опасный тул не ушёл в MCP")
 	}
 	if !strings.Contains(res.Reply, "готово") {
 		t.Fatalf("reply %q", res.Reply)
@@ -136,14 +145,10 @@ func TestRunnerToolsConfirmTruncateAndSecret(t *testing.T) {
 			t.Fatal("токен попал в OpenRouter")
 		}
 	}
-	foundRefusal := false
 	for _, msg := range res.Transcript {
 		if msg.Role == "tool" && strings.Contains(msg.Content, "не подтвердил") {
-			foundRefusal = true
+			t.Fatal("отказ записан вместо вызова")
 		}
-	}
-	if !foundRefusal {
-		t.Fatal("отказ не записан как результат тула")
 	}
 	for _, auth := range mcpAuth {
 		if auth != "" && auth != "Bearer "+secret {
@@ -202,7 +207,6 @@ func TestRunnerParallelTruncateDangerTextLimitCancel(t *testing.T) {
 		defer orSrv.Close()
 		res, err := testRunner(t, mcpSrv, orSrv, 4, 200).Run(context.Background(), Request{
 			Token: "mcp_x", UserText: "стоп",
-			Confirm: func(context.Context, string, json.RawMessage) (bool, error) { return true, nil },
 		})
 		if err != nil {
 			t.Fatal(err)

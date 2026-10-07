@@ -49,9 +49,6 @@ func ParseCallback(data string) (Callback, bool) {
 		if len(parts) == 2 && parts[1] == "logout" {
 			return Callback{Name: "logout", Yes: yes}, true
 		}
-		if len(parts) == 2 && parts[1] == "agent" {
-			return Callback{Name: "agent", Yes: yes}, true
-		}
 		if len(parts) == 3 && parts[1] == "pdel" {
 			id, ok := atoi64(parts[2])
 			if !ok {

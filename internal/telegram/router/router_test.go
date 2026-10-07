@@ -148,11 +148,11 @@ func TestConfirmsAndPaging(t *testing.T) {
 	if Handle(Input{Allowed: true, Busy: true, Callback: "run:stop"}).Kind != KindStopRun {
 		t.Fatal("stop run")
 	}
-	if Handle(Input{Allowed: true, Busy: true, Callback: "yes:agent"}).Kind != KindAgentAllow {
-		t.Fatal("agent yes")
+	if Handle(Input{Allowed: true, Busy: true, Callback: "yes:agent"}).Kind != KindBusy {
+		t.Fatal("yes:agent больше не отдельное подтверждение")
 	}
-	if Handle(Input{Allowed: true, Busy: true, Callback: "no:agent"}).Kind != KindAgentDeny {
-		t.Fatal("agent no")
+	if Handle(Input{Allowed: true, Busy: true, Callback: "no:agent"}).Kind != KindBusy {
+		t.Fatal("no:agent больше не отдельное подтверждение")
 	}
 	ren := Handle(Input{State: StateWaitRename, Allowed: true, HasToken: true, RenameProjectID: 6, Text: "Новое"})
 	if ren.Kind != KindRenameProject || ren.ProjectID != 6 || ren.Payload != "Новое" {
