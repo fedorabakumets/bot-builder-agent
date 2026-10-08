@@ -126,7 +126,8 @@ func TestSendAndEditUseHTML(t *testing.T) {
 	if err := b.edit(7, msg.MessageID, "Вызываю db_stop_bot", ui.StopKeyboard()); err != nil {
 		t.Fatal(err)
 	}
-	if api.modes[1] != telego.ModeHTML || api.texts[1] != "Вызываю db_stop_bot" {
+	last := len(api.texts) - 1
+	if api.modes[last] != telego.ModeHTML || api.texts[last] != "Вызываю db_stop_bot" {
 		t.Fatalf("edit %+v %+v", api.modes, api.texts)
 	}
 }
@@ -140,7 +141,7 @@ func TestSendFallsBackWhenHTMLRejected(t *testing.T) {
 	if err != nil || msg == nil {
 		t.Fatal(err)
 	}
-	if len(api.texts) != 1 || api.texts[0] != "Что было:" || api.modes[0] != "" {
+	if api.texts[0] != "Что было:" || api.modes[0] != "" {
 		t.Fatalf("fallback texts=%q modes=%q", api.texts, api.modes)
 	}
 	if strings.Contains(api.texts[0], "**") {
@@ -152,7 +153,8 @@ func TestSendFallsBackWhenHTMLRejected(t *testing.T) {
 	if err := b.edit(7, 1, body, nil); err != nil {
 		t.Fatal(err)
 	}
-	if api.texts[1] != "Что было:" || api.modes[1] != "" {
+	last := len(api.texts) - 1
+	if api.texts[last] != "Что было:" || api.modes[last] != "" {
 		t.Fatalf("edit fallback %+v %+v", api.modes, api.texts)
 	}
 }
@@ -184,7 +186,7 @@ func TestSendTableUsesRichHTML(t *testing.T) {
 	if err != nil || msg == nil {
 		t.Fatal(err)
 	}
-	if len(api.modes) != 1 || api.modes[0] != "rich" {
+	if len(api.modes) == 0 || api.modes[0] != "rich" {
 		t.Fatalf("modes %q", api.modes)
 	}
 	if api.richHTML[0] == "" || api.richMD[0] != "" {
@@ -221,7 +223,7 @@ func TestSendTableFallsBackWhenRichRejected(t *testing.T) {
 	if err != nil || msg == nil {
 		t.Fatal(err)
 	}
-	if len(api.texts) != 1 || api.modes[0] != "" {
+	if len(api.texts) == 0 || api.texts[0] == "" || api.modes[0] != "" {
 		t.Fatalf("fallback texts=%q modes=%q", api.texts, api.modes)
 	}
 	if strings.Contains(api.texts[0], "**") || strings.Contains(api.texts[0], "|") {

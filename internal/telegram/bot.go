@@ -53,9 +53,10 @@ type Bot struct {
 	root context.Context
 	self telego.User
 
-	mu    sync.Mutex
-	locks map[int64]*sync.Mutex
-	sess  map[int64]*session
+	mu             sync.Mutex
+	locks          map[int64]*sync.Mutex
+	sess           map[int64]*session
+	keyboardHidden map[int64]struct{}
 }
 
 type session struct {
@@ -392,27 +393,18 @@ func (b *Bot) deleteStatus(chatID int64, messageID int) {
 }
 
 func (b *Bot) send(chatID int64, body string, markup telego.ReplyMarkup) (*telego.Message, error) {
-	// У сообщения одно поле reply_markup. Сначала уходит ReplyKeyboardRemove:
-	// клиент прячет залипшую reply-клавиатуру и в личке, и в группе. Потом
-	// editMessageReplyMarkup вешает inline-кнопки. Снятие уже случилось и правкой
-	// не отменяется. Если правка не прошла, текст уже в чате и клавиатура скрыта.
-	menuInline := ui.InlineForGroup(markup)
-	markup = &telego.ReplyKeyboardRemove{RemoveKeyboard: true}
-	msg, err := b.deliver(chatID, body, markup)
-	if err != nil || msg == nil || menuInline == nil {
+	// У сообщения одно поле reply_markup. Сообщение с ReplyKeyboardRemove
+	// Telegram не даёт редактировать, поэтому «Да»/«Нет» и «Меню» ставим сразу.
+	// Залипшую reply-клавиатуру снимаем отдельным сообщением и тут же удаляем.
+	inline := ui.InlineForGroup(markup)
+	if inline == nil {
+		return b.deliver(chatID, body, &telego.ReplyKeyboardRemove{RemoveKeyboard: true})
+	}
+	msg, err := b.deliver(chatID, body, inline)
+	if err != nil || msg == nil {
 		return msg, err
 	}
-	if msg.MessageID == 0 {
-		b.log.Warn("chat=%d: пустой message_id, клавиатура снята без меню", chatID)
-		return msg, nil
-	}
-	if _, editErr := b.api.EditMessageReplyMarkup(b.baseCtx(), &telego.EditMessageReplyMarkupParams{
-		ChatID:      telego.ChatID{ID: chatID},
-		MessageID:   msg.MessageID,
-		ReplyMarkup: menuInline,
-	}); editErr != nil {
-		b.log.Warn("chat=%d: не удалось добавить меню: %v", chatID, editErr)
-	}
+	b.dropReplyKeyboard(chatID)
 	return msg, nil
 }
 

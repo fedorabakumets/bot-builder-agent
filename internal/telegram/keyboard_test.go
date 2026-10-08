@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -30,24 +31,16 @@ func TestGroupChatDoesNotGetReplyKeyboard(t *testing.T) {
 			t.Fatalf("экран %d: %v", i, err)
 		}
 	}
-	if len(api.markups) != len(screens) {
-		t.Fatalf("отправок %d", len(api.markups))
+	content := inlineMarkups(t, api.markups)
+	if len(content) != len(screens) {
+		t.Fatalf("сообщений с кнопками %d", len(content))
 	}
-	for i, markup := range api.markups {
-		if _, ok := markup.(*telego.ReplyKeyboardMarkup); ok {
-			t.Fatalf("отправка %d: ReplyKeyboardMarkup", i)
-		}
-		removed, ok := markup.(*telego.ReplyKeyboardRemove)
-		if !ok || !removed.RemoveKeyboard {
-			t.Fatalf("отправка %d: %T", i, markup)
-		}
+	if len(api.edits) != 0 {
+		t.Fatalf("кнопки нельзя вешать правкой: %d", len(api.edits))
 	}
-	if len(api.edits) != len(screens) {
-		t.Fatalf("правок меню %d", len(api.edits))
-	}
-	menu, ok := api.edits[0].(*telego.InlineKeyboardMarkup)
-	if !ok || len(menu.InlineKeyboard) != 1 || menu.InlineKeyboard[0][0].Text != ui.BtnMenu {
-		t.Fatalf("главное меню: %+v", api.edits[0])
+	menu := content[0]
+	if len(menu.InlineKeyboard) != 1 || menu.InlineKeyboard[0][0].Text != ui.BtnMenu {
+		t.Fatalf("главное меню: %+v", menu)
 	}
 	if menu.InlineKeyboard[0][0].CallbackData != "menu" {
 		t.Fatalf("callback %q", menu.InlineKeyboard[0][0].CallbackData)
@@ -67,13 +60,12 @@ func TestGroupChatDoesNotGetReplyKeyboard(t *testing.T) {
 			t.Fatalf("нет %q", need)
 		}
 	}
-	account, ok := api.edits[1].(*telego.InlineKeyboardMarkup)
-	if !ok || account.InlineKeyboard[0][0].CallbackData != "menu:account" {
-		t.Fatalf("аккаунт: %+v", api.edits[1])
+	if content[1].InlineKeyboard[0][0].CallbackData != "menu:account" {
+		t.Fatalf("аккаунт: %+v", content[1])
 	}
-	confirm, ok := api.edits[5].(*telego.InlineKeyboardMarkup)
-	if !ok || !strings.Contains(confirm.InlineKeyboard[0][0].CallbackData, "yes:logout") {
-		t.Fatalf("подтверждение не осталось inline: %+v", api.edits[5])
+	confirm := content[5]
+	if !strings.Contains(confirm.InlineKeyboard[0][0].CallbackData, "yes:logout") {
+		t.Fatalf("подтверждение без Да: %+v", confirm)
 	}
 }
 
@@ -97,42 +89,31 @@ func TestPrivateChatDoesNotGetReplyKeyboard(t *testing.T) {
 			t.Fatalf("экран %d: %v", i, err)
 		}
 	}
-	if len(api.markups) != len(screens) {
-		t.Fatalf("отправок %d", len(api.markups))
+	content := inlineMarkups(t, api.markups)
+	if len(content) != len(screens) {
+		t.Fatalf("сообщений с кнопками %d", len(content))
 	}
-	for i, markup := range api.markups {
-		if _, ok := markup.(*telego.ReplyKeyboardMarkup); ok {
-			t.Fatalf("отправка %d: ReplyKeyboardMarkup", i)
-		}
-		removed, ok := markup.(*telego.ReplyKeyboardRemove)
-		if !ok || !removed.RemoveKeyboard {
-			t.Fatalf("отправка %d: %T", i, markup)
-		}
+	if len(api.edits) != 0 {
+		t.Fatalf("кнопки нельзя вешать правкой: %d", len(api.edits))
 	}
-	if len(api.edits) != len(screens) {
-		t.Fatalf("правок меню %d", len(api.edits))
-	}
-	menu, ok := api.edits[0].(*telego.InlineKeyboardMarkup)
-	if !ok || len(menu.InlineKeyboard) != 1 || menu.InlineKeyboard[0][0].Text != ui.BtnMenu {
-		t.Fatalf("главное меню: %+v", api.edits[0])
+	menu := content[0]
+	if len(menu.InlineKeyboard) != 1 || menu.InlineKeyboard[0][0].Text != ui.BtnMenu {
+		t.Fatalf("главное меню: %+v", menu)
 	}
 	if menu.InlineKeyboard[0][0].CallbackData != "menu" {
 		t.Fatalf("callback %q", menu.InlineKeyboard[0][0].CallbackData)
 	}
 	want := []string{"menu", "menu:account", "menu:projects", "menu:bots", "menu:wait"}
 	for i, data := range want {
-		kb, ok := api.edits[i].(*telego.InlineKeyboardMarkup)
-		if !ok || kb.InlineKeyboard[0][0].CallbackData != data {
-			t.Fatalf("экран %d: %+v", i, api.edits[i])
+		if content[i].InlineKeyboard[0][0].CallbackData != data {
+			t.Fatalf("экран %d: %+v", i, content[i])
 		}
 	}
-	confirm, ok := api.edits[5].(*telego.InlineKeyboardMarkup)
-	if !ok || !strings.Contains(confirm.InlineKeyboard[0][0].CallbackData, "yes:logout") {
-		t.Fatalf("подтверждение не осталось inline: %+v", api.edits[5])
+	if !strings.Contains(content[5].InlineKeyboard[0][0].CallbackData, "yes:logout") {
+		t.Fatalf("подтверждение без Да: %+v", content[5])
 	}
-	stop, ok := api.edits[6].(*telego.InlineKeyboardMarkup)
-	if !ok || stop.InlineKeyboard[0][0].CallbackData != "run:stop" {
-		t.Fatalf("стоп не остался inline: %+v", api.edits[6])
+	if content[6].InlineKeyboard[0][0].CallbackData != "run:stop" {
+		t.Fatalf("стоп без кнопки: %+v", content[6])
 	}
 }
 
@@ -182,11 +163,12 @@ func TestGroupSendKeepsAnswerWhenMenuEditFails(t *testing.T) {
 	if err != nil || msg == nil || msg.Text == "" {
 		t.Fatalf("ответ должен уйти: %v %+v", err, msg)
 	}
-	if _, ok := api.markups[0].(*telego.ReplyKeyboardRemove); !ok {
-		t.Fatalf("клавиатура не снята: %T", api.markups[0])
+	kb, ok := api.markups[0].(*telego.InlineKeyboardMarkup)
+	if !ok || kb.InlineKeyboard[0][0].CallbackData != "menu" {
+		t.Fatalf("меню должно быть на самом сообщении: %T %+v", api.markups[0], api.markups[0])
 	}
 	if len(api.edits) != 0 {
-		t.Fatal("правка не должна записаться после ошибки")
+		t.Fatal("кнопки не должны вешаться правкой")
 	}
 }
 
@@ -212,21 +194,17 @@ func TestGroupStartGoesThroughSend(t *testing.T) {
 	if len(api.markups) == before {
 		t.Fatal("личка без ответа")
 	}
+	var menu *telego.InlineKeyboardMarkup
 	for _, markup := range api.markups[before:] {
 		if _, ok := markup.(*telego.ReplyKeyboardMarkup); ok {
 			t.Fatal("личка получила reply-клавиатуру")
 		}
-		if _, ok := markup.(*telego.ReplyKeyboardRemove); !ok {
-			t.Fatalf("личка: %T", markup)
+		if kb, ok := markup.(*telego.InlineKeyboardMarkup); ok {
+			menu = kb
 		}
 	}
-	if len(api.edits) == 0 {
-		t.Fatal("личка без кнопки меню")
-	}
-	last := api.edits[len(api.edits)-1]
-	menu, ok := last.(*telego.InlineKeyboardMarkup)
-	if !ok || menu.InlineKeyboard[0][0].Text != ui.BtnMenu || menu.InlineKeyboard[0][0].CallbackData != "menu" {
-		t.Fatalf("меню лички: %+v", last)
+	if menu == nil || menu.InlineKeyboard[0][0].Text != ui.BtnMenu || menu.InlineKeyboard[0][0].CallbackData != "menu" {
+		t.Fatalf("меню лички: %+v", menu)
 	}
 }
 
@@ -272,13 +250,57 @@ func TestPrivateMenuTaskDoesNotAskForMention(t *testing.T) {
 	if len(api.texts) == before {
 		t.Fatal("нет подсказки")
 	}
-	task := api.texts[len(api.texts)-1]
+	task := lastVisible(api.texts)
 	low := strings.ToLower(task)
 	if strings.Contains(low, "упомян") || strings.Contains(low, "ответ") {
 		t.Fatalf("личке нельзя про упоминание: %q", task)
 	}
 	if !strings.Contains(low, "опишите") {
 		t.Fatalf("текст задачи: %q", task)
+	}
+}
+
+func TestLogoutConfirmButtonsStayOnTheMessage(t *testing.T) {
+	b, raw, _ := newTestBot(t)
+	api := &captureAPI{fakeAPI: raw}
+	b.api = api
+	if err := b.store.SaveToken(context.Background(), 7, "mcp_user_7_xx"); err != nil {
+		t.Fatal(err)
+	}
+	b.process(textUpdate(7, "/logout"))
+	var confirm *telego.InlineKeyboardMarkup
+	for i, text := range api.texts {
+		if text != "Удалить сохранённый токен?" {
+			continue
+		}
+		kb, ok := api.markups[i].(*telego.InlineKeyboardMarkup)
+		if !ok {
+			t.Fatalf("вопрос без кнопок: %T", api.markups[i])
+		}
+		confirm = kb
+	}
+	if confirm == nil {
+		t.Fatal("нет вопроса")
+	}
+	got := map[string]string{}
+	for _, row := range confirm.InlineKeyboard {
+		for _, button := range row {
+			got[button.Text] = button.CallbackData
+		}
+	}
+	if got[ui.BtnYes] != "yes:logout" || got[ui.BtnNo] != "no:logout" {
+		t.Fatalf("кнопки %+v", got)
+	}
+	if len(api.edits) != 0 {
+		t.Fatal("подтверждение не должно зависеть от правки")
+	}
+	b.process(callbackUpdate(7, "yes:logout"))
+	if lastVisible(api.texts) != "Токен удалён." {
+		t.Fatalf("после Да: %+v", api.texts)
+	}
+	token, err := b.store.Token(context.Background(), 7)
+	if err != nil || token != "" {
+		t.Fatalf("токен %q err %v", token, err)
 	}
 }
 
@@ -296,5 +318,39 @@ func pressMenu(b *Bot, api *captureAPI, data string) string {
 	if len(api.texts) == before {
 		return ""
 	}
-	return api.texts[len(api.texts)-1]
+	return lastVisible(api.texts[before:])
+}
+
+func lastVisible(texts []string) string {
+	for i := len(texts) - 1; i >= 0; i-- {
+		if texts[i] != replyHideText {
+			return texts[i]
+		}
+	}
+	return ""
+}
+
+func inlineMarkups(t *testing.T, markups []telego.ReplyMarkup) []*telego.InlineKeyboardMarkup {
+	t.Helper()
+	var out []*telego.InlineKeyboardMarkup
+	removed := 0
+	for i, markup := range markups {
+		switch m := markup.(type) {
+		case *telego.ReplyKeyboardMarkup:
+			t.Fatalf("отправка %d: ReplyKeyboardMarkup", i)
+		case *telego.ReplyKeyboardRemove:
+			if !m.RemoveKeyboard {
+				t.Fatalf("отправка %d: снятие без флага", i)
+			}
+			removed++
+		case *telego.InlineKeyboardMarkup:
+			out = append(out, m)
+		default:
+			t.Fatalf("отправка %d: %T", i, markup)
+		}
+	}
+	if removed != 1 {
+		t.Fatalf("снятий клавиатуры %d", removed)
+	}
+	return out
 }

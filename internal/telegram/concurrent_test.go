@@ -240,7 +240,7 @@ func TestRunAgentDeletesStatusInsteadOfGotovo(t *testing.T) {
 			api.mu.Lock()
 			deleted := append([]int(nil), api.deleted...)
 			api.mu.Unlock()
-			if len(deleted) != 1 || deleted[0] == 0 {
+			if len(deleted) != 2 || !intsContain(deleted, 1) {
 				t.Fatalf("delete %+v", deleted)
 			}
 		})
@@ -299,8 +299,8 @@ func TestRunAgentStatusIsEditableAndFinalRemovesKeyboard(t *testing.T) {
 			if api.texts[0] != "Думаю…" {
 				t.Fatalf("первый текст %q", api.texts[0])
 			}
-			if len(api.edits) != 1 {
-				t.Fatalf("правок меню %d: статус не должен получать editMessageReplyMarkup", len(api.edits))
+			if len(api.edits) != 0 {
+				t.Fatalf("кнопки нельзя вешать правкой: %d", len(api.edits))
 			}
 			if api.texts[1] != "Вызываю db_list_bots" {
 				t.Fatalf("правка статуса %q", api.texts[1])
@@ -309,21 +309,21 @@ func TestRunAgentStatusIsEditableAndFinalRemovesKeyboard(t *testing.T) {
 			if !ok || edited.InlineKeyboard[0][0].CallbackData != "run:stop" {
 				t.Fatalf("правка без стопа: %+v", api.markups[1])
 			}
+			if api.texts[2] != "ответ агента" {
+				t.Fatalf("ответ %q", api.texts)
+			}
+			menu, ok := api.markups[2].(*telego.InlineKeyboardMarkup)
+			if !ok || menu.InlineKeyboard[0][0].Text != ui.BtnMenu {
+				t.Fatalf("меню финала: %+v", api.markups[2])
+			}
 			removed, ok := api.markups[len(api.markups)-1].(*telego.ReplyKeyboardRemove)
 			if !ok || !removed.RemoveKeyboard {
 				t.Fatalf("финал: %T", api.markups[len(api.markups)-1])
 			}
-			if api.texts[len(api.texts)-1] != "ответ агента" {
-				t.Fatalf("ответ %q", api.texts[len(api.texts)-1])
-			}
-			menu, ok := api.edits[0].(*telego.InlineKeyboardMarkup)
-			if !ok || menu.InlineKeyboard[0][0].Text != ui.BtnMenu {
-				t.Fatalf("меню финала: %+v", api.edits[0])
-			}
 			raw.mu.Lock()
 			deleted := append([]int(nil), raw.deleted...)
 			raw.mu.Unlock()
-			if len(deleted) != 1 || deleted[0] == 0 {
+			if len(deleted) != 2 || !intsContain(deleted, 1) {
 				t.Fatalf("delete %+v", deleted)
 			}
 		})
@@ -367,7 +367,7 @@ func TestOnToolEditFailureIsLogged(t *testing.T) {
 	if !ok || !removed.RemoveKeyboard {
 		t.Fatalf("финал: %T", api.markups[len(api.markups)-1])
 	}
-	if api.texts[len(api.texts)-1] != "ответ агента" {
+	if !containsText(api.texts, "ответ агента") {
 		t.Fatalf("ответ %q", api.texts)
 	}
 }
@@ -534,6 +534,24 @@ func callbackUpdate(id int64, data string) telego.Update {
 func hasText(lines []sentLine, chat int64, text string) bool {
 	for _, line := range lines {
 		if line.chat == chat && line.text == text {
+			return true
+		}
+	}
+	return false
+}
+
+func containsText(texts []string, want string) bool {
+	for _, text := range texts {
+		if text == want {
+			return true
+		}
+	}
+	return false
+}
+
+func intsContain(ids []int, want int) bool {
+	for _, id := range ids {
+		if id == want {
 			return true
 		}
 	}
