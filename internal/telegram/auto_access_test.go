@@ -1,4 +1,4 @@
-// @fileoverview Проверка отправителя, обновления, отключения и запрета доступа из групп.
+// @fileoverview Проверка отправителя, обновления, отключения и доступа из групп по личности отправителя.
 package telegram
 
 import (
@@ -114,19 +114,19 @@ func TestAutoLogoutRecovery(t *testing.T) {
 	}
 }
 
-// TestAutoGroupsAndManualPriority блокирует автоматический PAT в группах, сохраняя ручной.
+// TestAutoGroupsAndManualPriority разрешает персональный PAT в группе и сохраняет ручной приоритет.
 func TestAutoGroupsAndManualPriority(t *testing.T) {
 	b, _, calls, _, _ := autoFixture(t)
 	b.process(textUpdate(42, "/start"))
 	sess := &session{state: router.StateMain}
 	upd := textUpdate(42, "задача от пользователя 99")
 	upd.Message.Chat.ID = -100
-	if b.prepareAutoAccess(upd, 42, -100, sess) {
-		t.Fatal("автоматический доступ в группе")
+	if !b.prepareAutoAccess(upd, 42, -100, sess) {
+		t.Fatal("автоматический доступ в группе заблокирован")
 	}
 	cb := callbackUpdate(42, "p:list:0")
-	if b.prepareAutoAccess(cb, 42, -100, sess) {
-		t.Fatal("автоматическая кнопка в группе")
+	if !b.prepareAutoAccess(cb, 42, -100, sess) {
+		t.Fatal("автоматическая кнопка в группе заблокирована")
 	}
 	if err := b.store.SaveAccess(context.Background(), 42, "mcp_manual", "https://manual.example/mcp"); err != nil {
 		t.Fatal(err)

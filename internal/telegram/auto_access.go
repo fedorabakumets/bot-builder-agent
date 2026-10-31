@@ -1,4 +1,4 @@
-// @fileoverview Автоматический доступ только для подтверждённых отправителей в личке.
+// @fileoverview Автоматический доступ для подтверждённых отправителей в личных и групповых чатах.
 package telegram
 
 import (
@@ -28,13 +28,6 @@ func (b *Bot) prepareAutoAccess(upd telego.Update, uid, chat int64, sess *sessio
 	token, _, err := b.store.Access(b.baseCtx(), uid)
 	if err != nil {
 		return false
-	}
-	if chat != uid {
-		if isAuto || (token == "" && b.cfg.AutoAuthEnabled) {
-			b.say(chat, "Для работы с проектами напишите мне в личные сообщения.", nil)
-			return false
-		}
-		return true
 	}
 	// Ручной доступ имеет приоритет; остановка задачи не ждёт обновления подключения.
 	if token != "" && !isAuto || sess.busy {
