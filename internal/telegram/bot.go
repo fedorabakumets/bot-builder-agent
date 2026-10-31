@@ -208,7 +208,7 @@ func (b *Bot) process(upd telego.Update) {
 	case router.KindBusy, router.KindNotAllowed, router.KindNeedAccount, router.KindReply:
 		um.Unlock()
 		um = nil
-		b.say(chat, res.Text, screenMarkup(res.Next))
+		b.say(chat, res.Text, replyActions(res))
 	default:
 		// Изменения подключения и команды одного пользователя выполняются последовательно.
 		b.execute(uid, chat, res)

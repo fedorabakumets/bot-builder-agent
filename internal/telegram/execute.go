@@ -306,7 +306,7 @@ func (b *Bot) tool(ctx context.Context, userID int64, name string, args map[stri
 		return "", err
 	}
 	if strings.TrimSpace(token) == "" {
-		return "", errors.New("Сначала задайте MCP-токен в разделе «Аккаунт».")
+		return "", errors.New("Сначала задайте MCP-токен в разделе «Подключение».")
 	}
 	payload, err := json.Marshal(args)
 	if err != nil {

@@ -1,3 +1,4 @@
+// @fileoverview Кнопки навигации и действий в Telegram.
 package ui
 
 import (
@@ -7,15 +8,15 @@ import (
 )
 
 const (
-	BtnTask      = "💬 Задача"
+	BtnTask      = "💬 Новая задача"
 	BtnProjects  = "📁 Проекты"
 	BtnBots      = "🤖 Боты"
-	BtnAccount   = "⚙️ Аккаунт"
+	BtnAccount   = "⚙️ Подключение"
 	BtnServers   = "🔌 Серверы"
-	BtnToken     = "🔑 MCP-токен"
+	BtnToken     = "🔑 Подключить вручную"
 	BtnStatus    = "📊 Статус"
-	BtnReset     = "🧹 Сбросить диалог"
-	BtnLogout    = "🚪 Выйти"
+	BtnReset     = "🧹 Очистить диалог"
+	BtnLogout    = "🚪 Отключить доступ"
 	BtnBack      = "⬅️ Назад"
 	BtnCancel    = "❌ Отмена"
 	BtnCreate    = "➕ Создать"

@@ -173,6 +173,7 @@ func TestGroupSendKeepsAnswerWhenMenuEditFails(t *testing.T) {
 	}
 }
 
+// TestGroupStartGoesThroughSend проверяет inline-действия приветствия в личке и группе.
 func TestGroupStartGoesThroughSend(t *testing.T) {
 	b, raw, _ := newTestBot(t)
 	api := &captureAPI{fakeAPI: raw}
@@ -204,7 +205,7 @@ func TestGroupStartGoesThroughSend(t *testing.T) {
 			menu = kb
 		}
 	}
-	if menu == nil || menu.InlineKeyboard[0][0].Text != ui.BtnMenu || menu.InlineKeyboard[0][0].CallbackData != "menu" {
+	if menu == nil || len(menu.InlineKeyboard) != 3 || menu.InlineKeyboard[0][0].Text != ui.BtnTask || menu.InlineKeyboard[0][0].CallbackData != "nav:task" {
 		t.Fatalf("меню лички: %+v", menu)
 	}
 }

@@ -102,18 +102,20 @@ type Input struct {
 
 // Result — одно действие и следующий экран.
 type Result struct {
-	Kind      Kind
-	Next      State
-	Text      string
-	Payload   string
-	Endpoint  string
-	ProjectID int64
-	TokenID   int64
-	ServerID  int64
-	Enabled   bool
-	Page      int
-	Days      int
-	Archived  bool
+	/** Показывать действия сразу под ответом без промежуточной кнопки меню. */
+	ShowActions bool
+	Kind        Kind
+	Next        State
+	Text        string
+	Payload     string
+	Endpoint    string
+	ProjectID   int64
+	TokenID     int64
+	ServerID    int64
+	Enabled     bool
+	Page        int
+	Days        int
+	Archived    bool
 }
 
 // Handle разбирает команду, кнопку или callback. Текст кнопок меню не становится задачей агента.
@@ -134,8 +136,8 @@ func Handle(in Input) Result {
 	if cmd, args, ok := parseCommand(in.Text); ok {
 		return fromCommand(in, cmd, args)
 	}
-	if ui.MenuText(in.Text) {
-		return fromButton(in, in.Text)
+	if label := ui.NormalizeMenuText(in.Text); ui.MenuText(label) {
+		return fromButton(in, label)
 	}
 	if res, ok := accessOrImport(in.Text); ok {
 		return res
@@ -177,9 +179,9 @@ func busy(in Input) Result {
 func fromCommand(in Input, cmd, args string) Result {
 	switch cmd {
 	case "start":
-		return Result{Kind: KindReply, Next: StateMain, Text: startText}
+		return Result{Kind: KindReply, Next: StateMain, Text: startText, ShowActions: true}
 	case "help":
-		return Result{Kind: KindReply, Next: StateMain, Text: helpText}
+		return Result{Kind: KindReply, Next: StateMain, Text: helpText, ShowActions: true}
 	case "token":
 		if args == "" {
 			return Result{Kind: KindReply, Next: StateWaitMCP, Text: accessHint}
@@ -218,7 +220,7 @@ func fromButton(in Input, label string) Result {
 	case ui.BtnBots:
 		return listBots(in)
 	case ui.BtnAccount:
-		return Result{Kind: KindReply, Next: StateAccount, Text: "Аккаунт"}
+		return Result{Kind: KindReply, Next: StateAccount, Text: connectionText, ShowActions: true}
 	case ui.BtnToken:
 		return Result{Kind: KindReply, Next: StateWaitMCP, Text: accessHint}
 	case ui.BtnStatus:
@@ -498,7 +500,7 @@ func listBots(in Input) Result {
 }
 
 func needAccount(in Input) Result {
-	return Result{Kind: KindNeedAccount, Next: StateAccount, Text: "Сначала задайте MCP-токен в разделе «Аккаунт»."}
+	return Result{Kind: KindNeedAccount, Next: StateAccount, Text: "Сначала задайте MCP-токен в разделе «Подключение»."}
 }
 
 func cancel(in Input) Result {
@@ -536,11 +538,7 @@ func parseCommand(text string) (cmd, args string, ok bool) {
 	return cmd, args, cmd != ""
 }
 
-const startText = "Я собираю и правлю ботов в конструкторе.\n\nПри включённом автоматическом доступе достаточно написать мне в личку. Для нового пользователя создаётся пустой профиль. Ручные подключения доступны через /token. Напишите задачу своими словами: какого бота собрать или что изменить. «Проекты» и «Боты» открывают списки."
-
 const groupTaskText = "Напишите задачу ответом на сообщение бота или упомяните его. Сообщение без обращения в группе бот не читает."
-
-const helpText = "Напишите задачу обычным сообщением, я начну её сразу.\nКнопки внизу повторяют команды.\n/token ручное подключение к другому конструктору\n/servers список MCP-серверов\n/status статус\n/projects проекты\n/bots боты активного проекта\n/reset очистить диалог\n/logout отключить доступ к конструктору\n/cancel выйти из ввода"
 
 func authNext(kind string) State {
 	switch kind {
