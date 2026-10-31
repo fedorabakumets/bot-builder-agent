@@ -538,7 +538,7 @@ func parseCommand(text string) (cmd, args string, ok bool) {
 	return cmd, args, cmd != ""
 }
 
-const groupTaskText = "Напишите задачу ответом на сообщение бота или упомяните его. Сообщение без обращения в группе бот не читает."
+const groupTaskText = "Начните сообщение со слова «агент», ответьте на сообщение бота или упомяните его. Сообщение без обращения в группе бот не читает."
 
 func authNext(kind string) State {
 	switch kind {

@@ -1,3 +1,4 @@
+// @fileoverview Определение обращений к агенту в личных и групповых чатах.
 package telegram
 
 import (
@@ -9,7 +10,7 @@ import (
 
 // directedAt сообщает, нужно ли отвечать на сообщение.
 // В личке — да. В группе и супергруппе — только команда этому боту,
-// упоминание или ответ на его сообщение. Остальные реплики пропускаются.
+// упоминание, обращение «агент» или ответ на его сообщение. Остальные реплики пропускаются.
 func directedAt(msg *telego.Message, me telego.User) bool {
 	if msg == nil {
 		return true
@@ -28,7 +29,7 @@ func directedAt(msg *telego.Message, me telego.User) bool {
 	if hasMention(msg.Text, msg.Entities, me) || hasMention(msg.Caption, msg.CaptionEntities, me) {
 		return true
 	}
-	return false
+	return agentAddress(msg.Text) || agentAddress(msg.Caption)
 }
 
 // commandTargets принимает /cmd и /cmd@этотбот. /cmd@другойбот — нет.
