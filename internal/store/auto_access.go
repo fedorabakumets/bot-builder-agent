@@ -60,6 +60,12 @@ func (s *Store) SaveAutoAccess(ctx context.Context, id int64, endpoint string, a
 		return err
 	}
 	defer tx.Rollback()
+	// При первом автоматическом входе память прежнего ручного доступа не переносится.
+	if _, err = tx.ExecContext(ctx, `DELETE FROM messages WHERE telegram_user_id=? AND NOT EXISTS
+ (SELECT 1 FROM auto_access a JOIN users u USING(telegram_user_id)
+ WHERE a.telegram_user_id=? AND a.connection_id=? AND a.token_hash=?)`, id, id, a.ConnectionID, currentTokenHash(ctx, tx, id)); err != nil {
+		return err
+	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err = tx.ExecContext(ctx, `INSERT INTO users(telegram_user_id,mcp_token,mcp_url,updated_at) VALUES(?,?,?,?)
  ON CONFLICT(telegram_user_id) DO UPDATE SET mcp_token=excluded.mcp_token,mcp_url=excluded.mcp_url,updated_at=excluded.updated_at`, id, a.Token, endpoint, now)

@@ -199,7 +199,7 @@ func fromCommand(in Input, cmd, args string) Result {
 	case "reset":
 		return Result{Kind: KindResetHistory, Next: in.State, Text: "Диалог очищен."}
 	case "logout":
-		return Result{Kind: KindAskLogout, Next: in.State, Text: "Отключить доступ к конструктору? Автоматическое подключение можно восстановить только во вкладке «Агент»."}
+		return Result{Kind: KindAskLogout, Next: in.State, Text: "Отключить доступ и очистить историю диалога? Автоматическое подключение можно восстановить только во вкладке «Агент»."}
 	case "servers":
 		return Result{Kind: KindListServers, Next: StateServers, Text: "Серверы"}
 	case "cancel":
@@ -228,7 +228,7 @@ func fromButton(in Input, label string) Result {
 	case ui.BtnReset:
 		return Result{Kind: KindResetHistory, Next: StateAccount, Text: "Диалог очищен."}
 	case ui.BtnLogout:
-		return Result{Kind: KindAskLogout, Next: StateAccount, Text: "Отключить доступ к конструктору? Автоматическое подключение можно восстановить только во вкладке «Агент»."}
+		return Result{Kind: KindAskLogout, Next: StateAccount, Text: "Отключить доступ и очистить историю диалога? Автоматическое подключение можно восстановить только во вкладке «Агент»."}
 	case ui.BtnCreate:
 		if !in.HasToken {
 			return needAccount(in)

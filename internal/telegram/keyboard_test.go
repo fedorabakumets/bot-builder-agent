@@ -272,7 +272,7 @@ func TestLogoutConfirmButtonsStayOnTheMessage(t *testing.T) {
 	b.process(textUpdate(7, "/logout"))
 	var confirm *telego.InlineKeyboardMarkup
 	for i, text := range api.texts {
-		if text != "Отключить доступ к конструктору? Автоматическое подключение можно восстановить только во вкладке «Агент»." {
+		if text != "Отключить доступ и очистить историю диалога? Автоматическое подключение можно восстановить только во вкладке «Агент»." {
 			continue
 		}
 		kb, ok := api.markups[i].(*telego.InlineKeyboardMarkup)

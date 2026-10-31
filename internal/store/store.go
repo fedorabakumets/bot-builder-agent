@@ -216,19 +216,6 @@ func (s *Store) Access(ctx context.Context, userID int64) (token, endpoint strin
 	return token, endpoint, err
 }
 
-// Logout стирает токен и активный проект, историю не трогает.
-func (s *Store) Logout(ctx context.Context, userID int64) error {
-	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := s.db.ExecContext(ctx, `
-UPDATE users SET mcp_token='', mcp_url='', active_project_id=0, updated_at=? WHERE telegram_user_id=?
-`, now, userID)
-	if err != nil {
-		return err
-	}
-	_, err = s.db.ExecContext(ctx, `DELETE FROM mcp_servers WHERE telegram_user_id=? AND builder=1`, userID)
-	return err
-}
-
 // SetActiveProject запоминает проект.
 func (s *Store) SetActiveProject(ctx context.Context, userID, projectID int64) error {
 	now := time.Now().UTC().Format(time.RFC3339)
