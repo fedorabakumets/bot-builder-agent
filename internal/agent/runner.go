@@ -1,9 +1,9 @@
+// @fileoverview Выполнение задач без повторов MCP-операций после неоднозначного сетевого сбоя.
 package agent
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -239,15 +239,13 @@ func (r *Runner) execTools(ctx context.Context, req Request, calls []openrouter.
 				}
 				textOut, isErr, err := r.Remotes.Call(ctx, req.UserID, call.Name, json.RawMessage(call.Arguments))
 				if err != nil {
-					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-						fatalMu.Lock()
-						if fatal == nil {
-							fatal = err
-						}
-						fatalMu.Unlock()
-						return
+					// Сетевой сбой завершает задачу, чтобы модель не повторила изменение.
+					fatalMu.Lock()
+					if fatal == nil {
+						fatal = err
 					}
-					textOut = "Ошибка вызова: " + err.Error()
+					fatalMu.Unlock()
+					return
 				}
 				if isErr && strings.TrimSpace(textOut) == "" {
 					textOut = "Инструмент вернул ошибку."
@@ -257,15 +255,13 @@ func (r *Runner) execTools(ctx context.Context, req Request, calls []openrouter.
 			}
 			textOut, isErr, err := r.MCP.CallTool(ctx, req.Endpoint, req.Token, call.Name, json.RawMessage(call.Arguments))
 			if err != nil {
-				if errors.Is(err, mcp.ErrUnauthorized) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-					fatalMu.Lock()
-					if fatal == nil {
-						fatal = err
-					}
-					fatalMu.Unlock()
-					return
+				// Не возвращаем неоднозначную транспортную ошибку в цикл модели.
+				fatalMu.Lock()
+				if fatal == nil {
+					fatal = err
 				}
-				textOut = "Ошибка вызова: " + err.Error()
+				fatalMu.Unlock()
+				return
 			}
 			if isErr && strings.TrimSpace(textOut) == "" {
 				textOut = "Инструмент вернул ошибку."

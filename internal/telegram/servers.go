@@ -1,3 +1,4 @@
+// @fileoverview Управление MCP-серверами с явным отзывом автоматического доступа.
 package telegram
 
 import (
@@ -13,6 +14,9 @@ import (
 )
 
 func (b *Bot) servers(userID, chatID int64, res router.Result) {
+	if !b.autoServerMutation(userID, chatID, res) {
+		return
+	}
 	ctx := b.baseCtx()
 	switch res.Kind {
 	case router.KindListServers:

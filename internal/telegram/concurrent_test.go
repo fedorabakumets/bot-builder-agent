@@ -1,3 +1,4 @@
+// @fileoverview Проверки сообщений и поведения обновлённого подключения агента.
 package telegram
 
 import (
@@ -205,8 +206,8 @@ func TestRunAgentDeletesStatusInsteadOfGotovo(t *testing.T) {
 	}{
 		{name: "success", want: "ответ агента"},
 		{name: "cancel", err: context.Canceled, want: "Остановил."},
-		{name: "unauthorized", err: mcp.ErrUnauthorized, want: "Токен отклонён. Откройте «Аккаунт» и задайте новый."},
-		{name: "error", err: errors.New("boom"), want: "Не удалось получить ответ: boom"},
+		{name: "unauthorized", err: mcp.ErrUnauthorized, want: "Доступ отклонён. Проверьте подключение во вкладке «Агент» конструктора или ручные настройки аккаунта."},
+		{name: "error", err: errors.New("boom"), want: "Не удалось получить ответ. Попробуйте позже; проверьте результат перед повтором изменения."},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

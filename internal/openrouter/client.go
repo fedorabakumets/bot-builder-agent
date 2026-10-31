@@ -1,6 +1,8 @@
+// @fileoverview Клиент модели: PAT и межсервисный ключ исключаются из текста контекста.
 package openrouter
 
 import (
+	"bot-builder-agent/internal/text"
 	"context"
 	"errors"
 	"fmt"
@@ -72,6 +74,7 @@ func NewAt(apiKey, baseURL string, hc *http.Client) (*Client, error) {
 func (c *Client) Complete(ctx context.Context, req Request) (Message, error) {
 	messages := make([]openai.ChatCompletionMessage, 0, len(req.Messages))
 	for _, m := range req.Messages {
+		m.Content = text.RedactAgentSecrets(m.Content)
 		msg := openai.ChatCompletionMessage{
 			Role:       m.Role,
 			Content:    m.Content,
@@ -93,6 +96,7 @@ func (c *Client) Complete(ctx context.Context, req Request) (Message, error) {
 			msg.MultiContent = parts
 		}
 		for _, tc := range m.ToolCalls {
+			tc.Arguments = text.RedactAgentSecrets(tc.Arguments)
 			msg.ToolCalls = append(msg.ToolCalls, openai.ToolCall{
 				ID:   tc.ID,
 				Type: openai.ToolTypeFunction,
@@ -121,7 +125,7 @@ func (c *Client) Complete(ctx context.Context, req Request) (Message, error) {
 				Type: openai.ToolTypeFunction,
 				Function: &openai.FunctionDefinition{
 					Name:        tool.Name,
-					Description: tool.Description,
+					Description: text.RedactAgentSecrets(tool.Description),
 					Parameters:  params,
 				},
 			})

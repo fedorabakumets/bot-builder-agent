@@ -1,3 +1,4 @@
+// @fileoverview Настройки агента и доверенного автоматического доступа.
 package config
 
 import (
@@ -16,6 +17,12 @@ const DefaultBuilderURL = "https://telegram-bot-builder-e3u-production.up.railwa
 
 // Config — настройки процесса. Секреты пользователей здесь не хранятся.
 type Config struct {
+	// Включение автоматического доступа.
+	AutoAuthEnabled bool
+	// Идентификатор доверенного агента.
+	AutoAuthID string
+	// Ключ межсервисной подписи.
+	AutoAuthSecret   string
 	TelegramBotToken string
 	OpenRouterAPIKey string
 	AIModel          string
@@ -52,6 +59,9 @@ func Load() (*Config, error) {
 // FromEnv собирает конфиг только из окружения.
 func FromEnv() (*Config, error) {
 	cfg := &Config{
+		AutoAuthEnabled:  envBool("AGENT_AUTO_AUTH_ENABLED", false),
+		AutoAuthID:       envDefault("AGENT_AUTO_AUTH_ID", "bot-builder-agent"),
+		AutoAuthSecret:   os.Getenv("AGENT_AUTO_AUTH_SECRET"),
 		TelegramBotToken: strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN")),
 		OpenRouterAPIKey: strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")),
 		AIModel:          strings.TrimSpace(os.Getenv("AI_MODEL")),

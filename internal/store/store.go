@@ -1,3 +1,4 @@
+// @fileoverview Хранилище подключений и истории пользователя.
 package store
 
 import (
@@ -124,6 +125,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(telegram_user_id, id);
 		return err
 	}
 	if err := s.ensureMCPURL(); err != nil {
+		return err
+	}
+	if err := s.migrateAutoAccess(); err != nil {
 		return err
 	}
 	return s.migrateServers()

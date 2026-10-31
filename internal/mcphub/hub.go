@@ -1,3 +1,4 @@
+// @fileoverview Подключение MCP-серверов с безопасной обработкой автоматического доступа.
 package mcphub
 
 import (
@@ -170,6 +171,9 @@ func (h *Hub) Call(ctx context.Context, userID int64, publicName string, args js
 	}
 	if errors.Is(callErr, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 		return "", false, callErr
+	}
+	if automaticErr := h.autoFailure(ctx, srv, callErr); automaticErr != nil {
+		return "", false, automaticErr
 	}
 	if oauthUnauthorized(callErr) {
 		if textOut, isErr, retryErr := h.callAfterRefresh(ctx, srv, tool.Original, args); retryErr == nil {

@@ -1,6 +1,8 @@
+// @fileoverview Журналирование с сокрытием персональных и межсервисных секретов.
 package logger
 
 import (
+	"bot-builder-agent/internal/text"
 	"fmt"
 	"io"
 	"os"
@@ -67,7 +69,7 @@ func (l *Logger) write(lvl int, tag, format string, args ...any) {
 	line := fmt.Sprintf("%s %s %s\n", time.Now().Format(time.RFC3339), tag, fmt.Sprintf(format, args...))
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	_, _ = io.WriteString(l.out, line)
+	_, _ = io.WriteString(l.out, text.RedactAgentSecrets(text.Redact(line)))
 }
 
 func parseLevel(s string) int {

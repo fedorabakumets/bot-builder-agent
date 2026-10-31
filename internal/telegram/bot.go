@@ -1,3 +1,4 @@
+// @fileoverview Обработка Telegram Update и персональных подключений.
 package telegram
 
 import (
@@ -112,7 +113,7 @@ func (b *Bot) Start(ctx context.Context) error {
 			{Command: "projects", Description: "Список проектов"},
 			{Command: "bots", Description: "Боты активного проекта"},
 			{Command: "reset", Description: "Очистить диалог"},
-			{Command: "logout", Description: "Забыть токен"},
+			{Command: "logout", Description: "Отключить доступ"},
 			{Command: "servers", Description: "MCP-серверы чата"},
 			{Command: "cancel", Description: "Отменить ввод"},
 		},
@@ -154,6 +155,9 @@ func (b *Bot) process(upd telego.Update) {
 		}
 	}()
 
+	if !b.prepareAutoAccess(upd, uid, chat, sess) {
+		return
+	}
 	res := router.Handle(router.Input{
 		State:           sess.state,
 		Text:            textValue,
@@ -206,8 +210,7 @@ func (b *Bot) process(upd telego.Update) {
 		um = nil
 		b.say(chat, res.Text, screenMarkup(res.Next))
 	default:
-		um.Unlock()
-		um = nil
+		// Изменения подключения и команды одного пользователя выполняются последовательно.
 		b.execute(uid, chat, res)
 	}
 }
@@ -258,11 +261,12 @@ func (b *Bot) runAgent(ctx context.Context, userID, chatID int64, task string, f
 			return
 		}
 		if errors.Is(err, mcp.ErrUnauthorized) {
-			b.say(chatID, "Токен отклонён. Откройте «Аккаунт» и задайте новый.", ui.AccountKeyboard())
+			_ = b.store.ExpireAutoAccess(b.baseCtx(), userID)
+			b.say(chatID, "Доступ отклонён. Проверьте подключение во вкладке «Агент» конструктора или ручные настройки аккаунта.", ui.AccountKeyboard())
 			return
 		}
 		b.log.Error("агент user=%d: %v", userID, err)
-		b.say(chatID, "Не удалось получить ответ: "+err.Error(), ui.MainKeyboard())
+		b.say(chatID, "Не удалось получить ответ. Попробуйте позже; проверьте результат перед повтором изменения.", ui.MainKeyboard())
 		return
 	}
 	if err := b.store.Append(b.baseCtx(), userID, fromOR(result.Transcript)); err != nil {
@@ -366,7 +370,7 @@ func screenMarkup(state router.State) telego.ReplyMarkup {
 }
 
 func (b *Bot) say(chatID int64, body string, markup telego.ReplyMarkup) {
-	body = strings.TrimSpace(text.Redact(body))
+	body = strings.TrimSpace(text.RedactAgentSecrets(text.Redact(body)))
 	if body == "" {
 		body = "Готово."
 	}

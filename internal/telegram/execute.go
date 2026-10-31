@@ -1,3 +1,4 @@
+// @fileoverview Выполнение команд с учётом автоматического подключения.
 package telegram
 
 import (
@@ -54,6 +55,10 @@ func (b *Bot) execute(userID, chatID int64, res router.Result) {
 	case router.KindAskLogout:
 		b.say(chatID, res.Text, ui.ConfirmKeyboard("yes:logout", "no:logout"))
 	case router.KindLogout:
+		if err := b.disconnectAuto(ctx, userID); err != nil {
+			b.say(chatID, "Отключение ожидает связи с конструктором. Повторите /logout позже.", ui.AccountKeyboard())
+			return
+		}
 		if err := b.store.Logout(ctx, userID); err != nil {
 			b.say(chatID, "Не удалось выйти.", ui.AccountKeyboard())
 			return
@@ -194,7 +199,7 @@ func (b *Bot) execute(userID, chatID int64, res router.Result) {
 }
 
 func (b *Bot) statusText(ctx context.Context, userID int64) string {
-	token, endpoint, _ := b.store.Access(ctx, userID)
+	_, endpoint, _ := b.store.Access(ctx, userID)
 	if endpoint == "" {
 		endpoint = b.cfg.BuilderURL
 	}
@@ -204,7 +209,7 @@ func (b *Bot) statusText(ctx context.Context, userID int64) string {
 		projectLabel = fmt.Sprintf("%d", project)
 	}
 	lines := []string{
-		fmt.Sprintf("Конструктор: %s\nТокен: %s\nПроект: %s", mcp.Host(endpoint), store.MaskToken(token), projectLabel),
+		fmt.Sprintf("Конструктор: %s\nДоступ: %s\nПроект: %s", mcp.Host(endpoint), b.autoStatus(ctx, userID), projectLabel),
 	}
 	if servers, err := b.store.ListServers(ctx, userID); err == nil {
 		for _, item := range servers {
@@ -217,7 +222,11 @@ func (b *Bot) statusText(ctx context.Context, userID int64) string {
 			if host == "" {
 				host = "адрес по умолчанию"
 			}
-			line := fmt.Sprintf("%s [%s, %s] %s, %s", item.Name, state, item.Transport, mcp.Host(host), creds.Masked(item.AuthKind))
+			authLabel := creds.Masked(item.AuthKind)
+			if automatic, _ := b.store.IsAutoAccess(ctx, userID); automatic && item.Builder {
+				authLabel = "автоматический доступ"
+			}
+			line := fmt.Sprintf("%s [%s, %s] %s, %s", item.Name, state, item.Transport, mcp.Host(host), authLabel)
 			if item.LastError != "" {
 				line += ": " + item.LastError
 			}
@@ -307,7 +316,8 @@ func (b *Bot) tool(ctx context.Context, userID int64, name string, args map[stri
 	out, _, err := b.mcp.CallTool(ctx, endpoint, token, name, payload)
 	if err != nil {
 		if errors.Is(err, mcp.ErrUnauthorized) {
-			return "", errors.New("Токен отклонён. Откройте «Аккаунт» и задайте новый.")
+			_ = b.store.ExpireAutoAccess(ctx, userID)
+			return "", errors.New("Доступ отклонён. Проверьте подключение во вкладке «Агент» конструктора.")
 		}
 		return "", err
 	}

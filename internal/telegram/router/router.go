@@ -1,3 +1,4 @@
+// @fileoverview Маршрутизация команд и подсказки по подключению агента.
 package router
 
 import (
@@ -196,7 +197,7 @@ func fromCommand(in Input, cmd, args string) Result {
 	case "reset":
 		return Result{Kind: KindResetHistory, Next: in.State, Text: "Диалог очищен."}
 	case "logout":
-		return Result{Kind: KindAskLogout, Next: in.State, Text: "Удалить сохранённый токен?"}
+		return Result{Kind: KindAskLogout, Next: in.State, Text: "Отключить доступ к конструктору? Автоматическое подключение можно восстановить только во вкладке «Агент»."}
 	case "servers":
 		return Result{Kind: KindListServers, Next: StateServers, Text: "Серверы"}
 	case "cancel":
@@ -225,7 +226,7 @@ func fromButton(in Input, label string) Result {
 	case ui.BtnReset:
 		return Result{Kind: KindResetHistory, Next: StateAccount, Text: "Диалог очищен."}
 	case ui.BtnLogout:
-		return Result{Kind: KindAskLogout, Next: StateAccount, Text: "Удалить сохранённый токен?"}
+		return Result{Kind: KindAskLogout, Next: StateAccount, Text: "Отключить доступ к конструктору? Автоматическое подключение можно восстановить только во вкладке «Агент»."}
 	case ui.BtnCreate:
 		if !in.HasToken {
 			return needAccount(in)
@@ -326,9 +327,9 @@ func fromCallback(in Input) Result {
 		return Result{Kind: KindReply, Next: in.State, Text: "Сейчас нечего останавливать."}
 	case "logout":
 		if !cb.Yes {
-			return Result{Kind: KindReply, Next: StateAccount, Text: "Токен на месте."}
+			return Result{Kind: KindReply, Next: StateAccount, Text: "Подключение сохранено."}
 		}
-		return Result{Kind: KindLogout, Next: StateAccount, Text: "Токен удалён."}
+		return Result{Kind: KindLogout, Next: StateAccount, Text: "Доступ отключён."}
 	case "list_projects":
 		return listProjects(in, cb.Archived, cb.Page)
 	case "new_project":
@@ -535,11 +536,11 @@ func parseCommand(text string) (cmd, args string, ok bool) {
 	return cmd, args, cmd != ""
 }
 
-const startText = "Я собираю и правлю ботов в конструкторе.\n\nОткройте «Аккаунт» и пришлите блок mcpServers из вкладки «Агент». Затем напишите задачу своими словами: какого бота собрать или что изменить. «Проекты» и «Боты» открывают списки."
+const startText = "Я собираю и правлю ботов в конструкторе.\n\nПри включённом автоматическом доступе достаточно написать мне в личку. Для нового пользователя создаётся пустой профиль. Ручные подключения доступны через /token. Напишите задачу своими словами: какого бота собрать или что изменить. «Проекты» и «Боты» открывают списки."
 
 const groupTaskText = "Напишите задачу ответом на сообщение бота или упомяните его. Сообщение без обращения в группе бот не читает."
 
-const helpText = "Напишите задачу обычным сообщением, я начну её сразу.\nКнопки внизу повторяют команды.\n/token сохранить блок mcpServers или токен mcp_…\n/servers список MCP-серверов\n/status статус\n/projects проекты\n/bots боты активного проекта\n/reset очистить диалог\n/logout забыть токен конструктора\n/cancel выйти из ввода"
+const helpText = "Напишите задачу обычным сообщением, я начну её сразу.\nКнопки внизу повторяют команды.\n/token ручное подключение к другому конструктору\n/servers список MCP-серверов\n/status статус\n/projects проекты\n/bots боты активного проекта\n/reset очистить диалог\n/logout отключить доступ к конструктору\n/cancel выйти из ввода"
 
 func authNext(kind string) State {
 	switch kind {

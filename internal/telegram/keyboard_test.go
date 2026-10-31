@@ -1,3 +1,4 @@
+// @fileoverview Проверки сообщений и поведения обновлённого подключения агента.
 package telegram
 
 import (
@@ -270,7 +271,7 @@ func TestLogoutConfirmButtonsStayOnTheMessage(t *testing.T) {
 	b.process(textUpdate(7, "/logout"))
 	var confirm *telego.InlineKeyboardMarkup
 	for i, text := range api.texts {
-		if text != "Удалить сохранённый токен?" {
+		if text != "Отключить доступ к конструктору? Автоматическое подключение можно восстановить только во вкладке «Агент»." {
 			continue
 		}
 		kb, ok := api.markups[i].(*telego.InlineKeyboardMarkup)
@@ -295,7 +296,7 @@ func TestLogoutConfirmButtonsStayOnTheMessage(t *testing.T) {
 		t.Fatal("подтверждение не должно зависеть от правки")
 	}
 	b.process(callbackUpdate(7, "yes:logout"))
-	if lastVisible(api.texts) != "Токен удалён." {
+	if lastVisible(api.texts) != "Доступ отключён." {
 		t.Fatalf("после Да: %+v", api.texts)
 	}
 	token, err := b.store.Token(context.Background(), 7)
