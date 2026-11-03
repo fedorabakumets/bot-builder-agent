@@ -5,7 +5,6 @@ import (
 	"bot-builder-agent/internal/text"
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -71,7 +70,7 @@ func NewAt(apiKey, baseURL string, hc *http.Client) (*Client, error) {
 }
 
 // Complete выполняет chat completion. Пустой список Tools отключает инструменты.
-func (c *Client) Complete(ctx context.Context, req Request) (Message, error) {
+func (c *Client) completeOnce(ctx context.Context, req Request) (Message, error) {
 	messages := make([]openai.ChatCompletionMessage, 0, len(req.Messages))
 	for _, m := range req.Messages {
 		m.Content = text.RedactAgentSecrets(m.Content)
@@ -135,8 +134,15 @@ func (c *Client) Complete(ctx context.Context, req Request) (Message, error) {
 	if err != nil {
 		return Message{}, err
 	}
+	logCompletion(req.Model, resp)
 	if len(resp.Choices) == 0 {
-		return Message{}, fmt.Errorf("пустой ответ модели")
+		return Message{}, &ResponseError{Code: "MODEL_EMPTY_RESPONSE", Reason: "no_choices"}
+	}
+	if resp.Choices[0].FinishReason == openai.FinishReasonContentFilter {
+		return Message{}, &ResponseError{Code: "MODEL_CONTENT_FILTER", Reason: "content_filter"}
+	}
+	if resp.Choices[0].FinishReason == openai.FinishReasonLength {
+		return Message{}, &ResponseError{Code: "MODEL_TOKEN_LIMIT", Reason: "length"}
 	}
 	choice := resp.Choices[0].Message
 	out := Message{Role: choice.Role, Content: choice.Content}
@@ -153,6 +159,9 @@ func (c *Client) Complete(ctx context.Context, req Request) (Message, error) {
 			Name:      tc.Function.Name,
 			Arguments: args,
 		})
+	}
+	if strings.TrimSpace(out.Content) == "" && len(out.ToolCalls) == 0 {
+		return Message{}, &ResponseError{Code: "MODEL_EMPTY_RESPONSE", Reason: string(resp.Choices[0].FinishReason)}
 	}
 	return out, nil
 }

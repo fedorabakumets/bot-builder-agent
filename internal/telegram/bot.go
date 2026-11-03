@@ -266,6 +266,12 @@ func (b *Bot) runAgent(ctx context.Context, userID, chatID int64, task string, f
 			return
 		}
 		b.log.Error("агент user=%d: %v", userID, err)
+		// Показываем только безопасную структурированную ошибку модели без сырого ответа провайдера.
+		var modelErr *openrouter.ResponseError
+		if errors.As(err, &modelErr) {
+			b.say(chatID, modelErr.Error(), ui.MainKeyboard())
+			return
+		}
 		b.say(chatID, "Не удалось получить ответ. Попробуйте позже; проверьте результат перед повтором изменения.", ui.MainKeyboard())
 		return
 	}
