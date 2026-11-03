@@ -234,8 +234,8 @@ func (r *Runner) execTools(ctx context.Context, req Request, calls []openrouter.
 				return
 			}
 			if tool, ok := remotes[call.Name]; ok && r.Remotes != nil {
-				if tool.Builder && IsDangerous(tool.Original) {
-					call.Arguments = withConfirm(call.Arguments)
+				if tool.Builder {
+					call.Arguments = builderConfirmedArguments(tool.Original, call.Arguments)
 				}
 				textOut, isErr, err := r.Remotes.Call(ctx, req.UserID, call.Name, json.RawMessage(call.Arguments))
 				if err != nil {
@@ -253,6 +253,7 @@ func (r *Runner) execTools(ctx context.Context, req Request, calls []openrouter.
 				outs[i] = toolOut{id: call.ID, name: call.Name, content: text.Truncate(textOut, maxChars)}
 				return
 			}
+			call.Arguments = builderConfirmedArguments(call.Name, call.Arguments)
 			textOut, isErr, err := r.MCP.CallTool(ctx, req.Endpoint, req.Token, call.Name, json.RawMessage(call.Arguments))
 			if err != nil {
 				// Не возвращаем неоднозначную транспортную ошибку в цикл модели.

@@ -313,13 +313,16 @@ func (b *Bot) tool(ctx context.Context, userID int64, name string, args map[stri
 		return "", err
 	}
 	b.log.Info("ui tool=%s user=%d", name, userID)
-	out, _, err := b.mcp.CallTool(ctx, endpoint, token, name, payload)
+	out, isErr, err := b.mcp.CallBuilderAction(ctx, endpoint, token, name, payload)
 	if err != nil {
 		if errors.Is(err, mcp.ErrUnauthorized) {
 			_ = b.store.ExpireAutoAccess(ctx, userID)
 			return "", errors.New("Доступ отклонён. Проверьте подключение во вкладке «Агент» конструктора.")
 		}
 		return "", err
+	}
+	if isErr {
+		return "", errors.New(text.Redact(out))
 	}
 	return text.Redact(out), nil
 }
