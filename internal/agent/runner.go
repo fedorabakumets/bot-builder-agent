@@ -227,7 +227,7 @@ func (r *Runner) execTools(ctx context.Context, req Request, calls []openrouter.
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			if req.OnTool != nil {
-				req.OnTool(call.Name)
+				req.OnTool(toolProgressName(call.Name, call.Arguments, remotes))
 			}
 			if textOut, ok := r.localTool(ctx, call); ok {
 				outs[i] = toolOut{id: call.ID, name: call.Name, content: text.Truncate(textOut, maxChars)}

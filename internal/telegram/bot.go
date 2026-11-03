@@ -250,7 +250,7 @@ func (b *Bot) runAgent(ctx context.Context, userID, chatID int64, task string, f
 			if statusID == 0 {
 				return
 			}
-			if err := b.edit(chatID, statusID, "Вызываю "+name, ui.StopKeyboard()); err != nil {
+			if err := b.edit(chatID, statusID, toolStatus(name), ui.StopKeyboard()); err != nil {
 				b.log.Warn("chat=%d: не удалось обновить статус: %v", chatID, err)
 			}
 		},
